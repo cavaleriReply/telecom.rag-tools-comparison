@@ -1,0 +1,27 @@
+[project]
+name = "telecom-rag-tools-comparison"
+version = "0.1.0"
+description = "Confronto oggettivo di strumenti RAG/knowledge-retrieval sulla documentazione museale Olivetti"
+authors = [
+    {name = "Francesco",email = "f.cavaleri@reply.it"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # OCR / accesso ai modelli: un solo client (litellm) per LLM ed embedding,
+    # così tutti i framework usano gli stessi modelli via le stesse variabili .env.
+    "litellm (>=1.51.0)",
+    "google-cloud-aiplatform (>=1.60.0)",  # backend Vertex AI usato da litellm
+    "python-dotenv (>=1.0.0)",             # carica .env negli entry-point
+    "lightrag-hku (==1.5.7)",
+    "supermemory (>=3.61.0,<4.0.0)",
+]
+
+[tool.poetry]
+# Questo repo e' un banco di prova / benchmark, non una libreria da pubblicare:
+# niente packaging, si esegue con `poetry run python -m preprocessing ...`.
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

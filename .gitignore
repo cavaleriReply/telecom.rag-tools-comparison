@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# Artefatti generati dagli adapter (grafi, indici vettoriali, cache LLM)
+data/**/lightrag_workdir/
+
+# env locale del server supermemory
+scripts/supermemory.env
+
+# Store del server supermemory self-hosted
+data/**/supermemory_data/
+
+# store locale supermemory creato se si lancia il binario dalla repo
+.supermemory/
