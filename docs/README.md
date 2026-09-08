@@ -8,3 +8,4 @@
   pipeline di evaluation, stato attuale.
 - [`lightrag.md`](lightrag.md) — due diligence GitHub di LightRAG.
 - [`supermemory.md`](supermemory.md) — due diligence GitHub di supermemory.
+- [`cognee.md`](cognee.md) — due diligence GitHub di cognee.

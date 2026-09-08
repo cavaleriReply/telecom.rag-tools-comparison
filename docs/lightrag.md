@@ -78,7 +78,8 @@ Da verificare incrociando con i nostri risultati (analisi delle cause):
   via `litellm` ([`adapters/_vertex.py`](../adapters/_vertex.py)), come tutti gli
   altri tool. 1536 (non i 3072 nativi) per parità con supermemory — vedi
   [`implementazione.md` §11](implementazione.md).
-- Storage: JSON default, working dir sotto `data/olivettiV0/lightrag_workdir/<config>/`.
+- Storage: JSON default, working dir `data/olivettiV0/lightrag_workdir/<config-hash>/`
+  (persiste tra run con la stessa config).
 - Config esposte: `query_mode`, `top_k`, `chunk_top_k`, `chunk_token_size`,
   `embedding_dimensions`, reranker disattivato. Ogni combinazione = risultati
   separati in `eval/results/`.

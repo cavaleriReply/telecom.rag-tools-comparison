@@ -23,19 +23,33 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESULTS_ROOT = _PROJECT_ROOT / "eval" / "results"
 
 
-def _config_slug(config: dict[str, Any]) -> str:
+def config_hash(config: dict[str, Any]) -> str:
     """
-    Nome cartella leggibile + hash corto della config completa.
-
-    La parte leggibile aiuta a orientarsi tra le cartelle; l'hash garantisce
-    che due configurazioni diverse non collidano mai anche se lo slug è uguale.
+    Hash corto e stabile della config: identifica una configurazione a prescindere
+    dal formato dello slug leggibile. Usato per gli artefatti che devono
+    persistere tra run (working dir di LightRAG) e come suffisso dello slug.
     """
-    readable = "-".join(f"{key}={config[key]}" for key in sorted(config))
-    readable = readable.replace("/", "_").replace(" ", "")[:80]
-    fingerprint = hashlib.sha1(
+    return hashlib.sha1(
         json.dumps(config, sort_keys=True, default=str).encode()
     ).hexdigest()[:8]
-    return f"{readable}__{fingerprint}"
+
+
+def _config_slug(config: dict[str, Any]) -> str:
+    """
+    Nome cartella: parte leggibile (per orientarsi) + ``config_hash`` (per
+    l'unicità, anche se lo slug leggibile venisse troncato o cambiasse formato).
+    """
+    tokens = [
+        f"{key}={config[key]}".replace("/", "_").replace(" ", "") for key in sorted(config)
+    ]
+    # Token interi finché stanno nel budget (niente tagli a metà valore). È un
+    # nome di cartella, quindi possiamo essere generosi.
+    readable, budget = "", 120
+    for token in tokens:
+        if len(readable) + len(token) + 1 > budget:
+            break
+        readable = f"{readable}-{token}" if readable else token
+    return f"{readable}__{config_hash(config)}"
 
 
 def new_run_dir(tool: str, config: dict[str, Any]) -> Path:

@@ -67,8 +67,12 @@ class SupermemoryConfig:
     #: Alla fine del run, cancella i documenti del container (utile sull'hosted).
     cleanup_on_teardown: bool = True
 
+    #: campi operativi (dove connettersi, se pulire) — NON influenzano i risultati,
+    #: quindi restano fuori da `as_dict()` (identità della config: slug + hash + run.json).
+    _OPERATIONAL = ("base_url", "cleanup_on_teardown")
+
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {k: v for k, v in asdict(self).items() if k not in self._OPERATIONAL}
 
 
 # ---------------------------------------------------------------------------

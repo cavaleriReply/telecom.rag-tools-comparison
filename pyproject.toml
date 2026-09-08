@@ -6,7 +6,8 @@ authors = [
     {name = "Francesco",email = "f.cavaleri@reply.it"}
 ]
 readme = "README.md"
-requires-python = ">=3.12"
+# <3.15: vincolo di cognee (e di altri pacchetti dell'ecosistema).
+requires-python = ">=3.12,<3.15"
 dependencies = [
     # OCR / accesso ai modelli: un solo client (litellm) per LLM ed embedding,
     # così tutti i framework usano gli stessi modelli via le stesse variabili .env.
@@ -15,6 +16,7 @@ dependencies = [
     "python-dotenv (>=1.0.0)",             # carica .env negli entry-point
     "lightrag-hku (==1.5.7)",
     "supermemory (>=3.61.0,<4.0.0)",
+    "cognee (==1.5.4)",
 ]
 
 [tool.poetry]

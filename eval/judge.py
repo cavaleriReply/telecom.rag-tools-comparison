@@ -51,10 +51,15 @@ Rispondi SOLO con un oggetto JSON:
  "missing_points": ["<punto atteso non coperto>", ...],
  "context_supports": <true|false>}
 
-- OK: la risposta è corretta e trova pieno riscontro nel corpus (e copre i punti attesi, se indicati).
-- PARTIAL: alcuni elementi sono corretti, altri mancano o sono imprecisi.
-- WRONG: la risposta afferma cose non presenti nel corpus (allucinazione).
-- DECLINED: il sistema dichiara di non avere l'informazione.
+Scegli la label in quest'ordine:
+1. DECLINED: la RISPOSTA dichiara di non sapere / non aver trovato l'informazione
+   (es. "Non ho trovato...", "non è disponibile", "il contesto non specifica").
+   Vale ANCHE se l'informazione era in realtà nel corpus: in quel caso è un
+   fallimento di copertura, NON un'allucinazione — resta DECLINED.
+2. WRONG: la risposta AFFERMA fatti non presenti nel corpus (allucinazione vera).
+3. PARTIAL: afferma fatti corretti e supportati, ma incompleti o con imprecisioni.
+4. OK: corretta e con pieno riscontro nel corpus (copre i punti attesi, se indicati).
+
 - context_supports: true se i FRAMMENTI RECUPERATI, da soli, contengono abbastanza per rispondere."""
 
 
@@ -103,6 +108,7 @@ async def _judge_one(
             {"role": "user", "content": user_prompt},
         ],
         response_format={"type": "json_object"},
+        temperature=0,  # il giudice dev'essere il più deterministico possibile
     )
     data = _parse_judge_json(raw)
     label = str(data.get("label", "")).strip().upper()

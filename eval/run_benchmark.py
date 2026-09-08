@@ -31,6 +31,7 @@ _QUESTIONS_CSV = (
     _PROJECT_ROOT / "data" / "olivettiV0" / "competency_questions" / "competency_questions.csv"
 )
 _LIGHTRAG_WORKDIR_ROOT = _PROJECT_ROOT / "data" / "olivettiV0" / "lightrag_workdir"
+_COGNEE_DATA_ROOT = _PROJECT_ROOT / "data" / "olivettiV0" / "cognee_data"
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +44,9 @@ def _build_lightrag(args: argparse.Namespace) -> RAGAdapter:
     from adapters.lightrag_adapter import LightRAGAdapter, LightRAGConfig
 
     config = LightRAGConfig(query_mode=args.query_mode)
-    workdir = _LIGHTRAG_WORKDIR_ROOT / results_store._config_slug(config.as_dict())
+    # working dir per hash della config: il grafo persiste ed è riusato dai run
+    # successivi con la stessa config (ingest lungo solo la prima volta).
+    workdir = _LIGHTRAG_WORKDIR_ROOT / results_store.config_hash(config.as_dict())
     return LightRAGAdapter(working_dir=workdir, config=config)
 
 
@@ -55,13 +58,25 @@ def _build_supermemory(args: argparse.Namespace) -> RAGAdapter:
         search_mode=args.query_mode,
         base_url=os.environ.get("SUPERMEMORY_BASE_URL") or None,
     )
-    slug = results_store._config_slug(config.as_dict())
-    return SupermemoryAdapter(config=config, container_tag=f"olivettiV0__{slug}")
+    # container_tag lo calcola l'adapter (deve stare in <=100 caratteri: il limite
+    # di supermemory). Non lo forziamo qui con lo slug lungo della results dir.
+    return SupermemoryAdapter(config=config)
+
+
+def _build_cognee(args: argparse.Namespace) -> RAGAdapter:
+    from adapters.cognee_adapter import CogneeAdapter, CogneeConfig
+
+    # --query-mode mappa su search_type (GRAPH_COMPLETION | RAG_COMPLETION | ...).
+    st = args.query_mode.upper() if args.query_mode != "hybrid" else "GRAPH_COMPLETION"
+    config = CogneeConfig(search_type=st)
+    data_dir = _COGNEE_DATA_ROOT / results_store.config_hash(config.as_dict())
+    return CogneeAdapter(data_dir=data_dir, config=config)
 
 
 _ADAPTER_BUILDERS = {
     "lightrag": _build_lightrag,
     "supermemory": _build_supermemory,
+    "cognee": _build_cognee,
 }
 
 
@@ -75,11 +90,11 @@ async def run_benchmark(adapter: RAGAdapter, *, limit: int | None) -> Path:
     if limit is not None:
         questions = questions[:limit]
 
-    describe = adapter.describe() if hasattr(adapter, "describe") else {"tool": adapter.name}
-    run_dir = results_store.new_run_dir(adapter.name, describe.get("config", {}))
+    _describe = lambda: adapter.describe() if hasattr(adapter, "describe") else {"tool": adapter.name}
+    run_dir = results_store.new_run_dir(adapter.name, _describe().get("config", {}))
     print(f"Run: {run_dir}")
 
-    await adapter.setup()
+    await adapter.setup()  # dopo il setup describe() ha anche i valori risolti (es. embedding_dim)
 
     print(f"Ingest di {len(documents)} documenti...")
     ingest_started = time.monotonic()
@@ -109,7 +124,7 @@ async def run_benchmark(adapter: RAGAdapter, *, limit: int | None) -> Path:
     results_store.write_json(
         run_dir / "run.json",
         {
-            **describe,
+            **_describe(),
             "ocr_dir": str(_OCR_DIR),
             "questions_csv": str(_QUESTIONS_CSV),
             "n_documents": len(documents),

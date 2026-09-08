@@ -1,52 +1,52 @@
-id,question
-1,Quali sono le caratteristiche meccaniche della Olivetti Lettera 22?
-2,Quali materiali sono stati utilizzati per la costruzione della macchina?
-3,Quali sono le dimensioni e il peso della Lettera 22?
-4,Come funziona il sistema di battitura e di ritorno del carrello?
-5,Qual è la velocità massima di battitura che può raggiungere?
-6,Che tipo di nastro inchiostrato utilizza la Lettera 22?
-7,Come viene eseguita la manutenzione e la riparazione della macchina?
-8,In quale anno è stata prodotta la Olivetti Lettera 22?
-9,Chi ha progettato la Lettera 22?
-10,Qual è stato il contesto storico-economico in cui è stata lanciata?
-11,Quale era la posizione di Olivetti nel mercato delle macchine da scrivere quando è stata introdotta la Lettera 22?
-12,Quali sono stati i principali mercati di vendita della Olivetti Lettera 22?
-13,Quali figure di rilievo hanno utilizzato la Lettera 22?
-14,Chi è stato il designer della Olivetti Lettera 22?
-15,Quali scelte di design sono state fatte per migliorare l'ergonomia della macchina?
-16,In che modo il design della Lettera 22 riflette le tendenze stilistiche del suo periodo?
-17,Come si presenta la disposizione dei tasti sulla Olivetti Lettera 22?
-18,Quali premi di design ha vinto la Lettera 22?
-19,Qual è stata la strategia di marketing utilizzata per promuovere la Olivetti Lettera 22?
-20,Quali sono stati i principali competitor della Lettera 22 nel mercato delle macchine da scrivere portatili?
-21,Qual è stato il prezzo di vendita iniziale della Olivetti Lettera 22?
-22,Come è cambiato il prezzo della Lettera 22 nel corso del tempo?
-23,In che modo la Olivetti Lettera 22 ha influenzato la cultura popolare?
-24,Quali scrittori famosi hanno citato la Lettera 22 nelle loro opere?
-25,Come è stata percepita la Lettera 22 nel mondo dell'arte e del design?
-26,Quali innovazioni tecnologiche erano presenti nella Olivetti Lettera 22 rispetto ai modelli precedenti?
-27,In che modo la Lettera 22 ha influenzato lo sviluppo di future macchine da scrivere o dispositivi simili?
-28,Quali sono le caratteristiche ergonomiche che rendono la Olivetti Lettera 22 facile da utilizzare?
-29,In che modo la Lettera 22 è stata progettata per essere portatile e maneggevole?
-30,"Quali gruppi sociali hanno adottato maggiormente la Lettera 22 (studenti, giornalisti, ecc.)?"
-31,Quale impatto ha avuto la Lettera 22 sul lavoro d'ufficio e sulla produttività personale?
-32,Cosa è il prodotto olivetti Lettera 22?
-33,Mi parleresti del prodotto olivetti valentine?
-34,Sono stati fatti dei poster per la valentine?
-35,Adriano Olivetti è mai stato in America?
-36,Cosa è stato presentato nel 1961 da Ottavio Cascio?
-37,Ci sono opere nel museo di arte moderna a New York?
-38,is there some product about Olivetti at the museum of modern art in New York?
-39,Come faccio ad annullare tutti gli arresti nella lettera 22?
-40,Mi descriveresti la leva del bicolore 18 della lettera 22?
-41,Cosa è il prodotto olivetti Valentine?
-42,Cosa è il prodotto olivetti Lettera 22?
-43,In che anno viene fondata Olivetti?
-44,Quando muore Adriano Olivetti?
-45,Cosa mi racconti di Camillo e Adriano Olivetti?
-46,In che anno è stato presentato il Programma 101 e perché è considerato storicamente rilevante?
-47,Chi ha progettato il Programma 101?
-48,Che tipo di calcolatrice era il Programma 101 e quali erano le sue funzionalità principali?
-49,Perché il Programma 101 viene chiamato anche 'Perottina'?
-50,Dove e come è stato presentato al pubblico il Programma 101?
-51,In che modo il Programma 101 ha influenzato la storia dell'informatica personale?
+id,question,answerable,expected_points,expected_source_docs,category
+1,Quali sono le caratteristiche meccaniche della Olivetti Lettera 22?,yes,43 tasti di scrittura (86 segni); incolonnatore per la scrittura in colonna; commutatore/leva del nastro bicolore (due colori + matrici); marginatori visibili; frizione del rullo; tasto per il ritorno del carrello; tasto per la scrittura oltre i margini; aste reggicarta; impostatore e annullatore degli arresti dell'incolonnatore; meccanismo di scrittura 'Cinematico' ad accelerazione progressiva; regolatore del tocco a 4 posizioni,Fogli Catalogo - Lettera 22 - fronte-retro;istruzioni_lettera22_revisionato,meccanica
+2,Quali materiali sono stati utilizzati per la costruzione della macchina?,no,,,meccanica
+3,Quali sono le dimensioni e il peso della Lettera 22?,yes,"peso 3,7 kg; altezza 85 mm, larghezza 302 mm, lunghezza 324 mm; diametro rullo 32 mm; spazi: 87 (carattere Pica) o 100 (carattere Eletto/Lettera); tre interlineature 5 - 7,5 - 10 mm oltre la posizione 0",Fogli Catalogo - Lettera 22 - fronte-retro,meccanica
+4,Come funziona il sistema di battitura e di ritorno del carrello?,yes,"meccanismo di scrittura 'Cinematico' ad accelerazione progressiva, che dà leggerezza ed elasticità alla tastiera consentendo scrittura veloce e uniforme; il ritorno a capo e il cambio di riga si fanno con la leva dell'interlinea 6; il tasto del ritorno 19 fa retrocedere il carrello di uno spazio; le leve liberacarrello 10 lo fanno scorrere a sinistra; la leva di bloccaggio del carrello 7 lo blocca per il trasporto",Fogli Catalogo - Lettera 22 - fronte-retro;istruzioni_lettera22_revisionato,meccanica
+5,Qual è la velocità massima di battitura che può raggiungere?,no,,,meccanica
+6,Che tipo di nastro inchiostrato utilizza la Lettera 22?,yes,"nastro con due parti: superiore blu o nera, inferiore rossa; si passa da una all'altra con la leva del bicolore 18; è dello stesso tipo usato per le macchine da ufficio ed è montato su bobine di uguale capacità; avanzamento automatico con inversione automatica a fine bobina; il commutatore del nastro permette anche di imprimere matrici",istruzioni_lettera22_revisionato;Fogli Catalogo - Lettera 22 - fronte-retro,meccanica
+7,Come viene eseguita la manutenzione e la riparazione della macchina?,yes,pulizia dei caratteri con pennello duro di nailon inumidito di benzina; pulizia del rullo con straccio bianco inumidito di alcool; pulizia interna smontando la lamiera inferiore (4 viti) e usando il pennello morbido di setola asciutto; non lubrificare mai la macchina; applicare la copertina gommata quando è inoperosa (la polvere è la peggior nemica); per la manutenzione generale e gli inconvenienti di funzionamento rivolgersi alle officine del Servizio Tecnico Assistenza Clienti Olivetti,istruzioni_lettera22_revisionato,meccanica
+8,In quale anno è stata prodotta la Olivetti Lettera 22?,yes,la Lettera 22 è introdotta nel 1950 (industrial design di Marcello Nizzoli),Estratto DESIGN PROCESS OLIVETTI 1908 1983,storia
+9,Chi ha progettato la Lettera 22?,yes,industrial design di Marcello Nizzoli (1950); le caratteristiche tecniche sono di Giuseppe Beccio,Estratto DESIGN PROCESS OLIVETTI 1908 1983,design
+10,Qual è stato il contesto storico-economico in cui è stata lanciata?,partial,"contesto di ripresa post-bellica: con la fine della guerra Olivetti torna attiva sui mercati esteri (1946), con una prima base di vendita a New York; nel 1948 Lexikon 80 e Divisumma aprono un vasto mercato; nel 1950, anno della Lettera 22, viene costituita la Olivetti Corporation of America a New York. Nessuna frase collega esplicitamente il lancio della L22 a un contesto economico specifico",Estratto DESIGN PROCESS OLIVETTI 1908 1983,storia
+11,Quale era la posizione di Olivetti nel mercato delle macchine da scrivere quando è stata introdotta la Lettera 22?,no,,,storia
+12,Quali sono stati i principali mercati di vendita della Olivetti Lettera 22?,no,,,marketing
+13,Quali figure di rilievo hanno utilizzato la Lettera 22?,no,,,cultura
+14,Chi è stato il designer della Olivetti Lettera 22?,yes,Marcello Nizzoli,Estratto DESIGN PROCESS OLIVETTI 1908 1983,design
+15,Quali scelte di design sono state fatte per migliorare l'ergonomia della macchina?,yes,"citazione di Nizzoli: le leve (di cui la maniglia è l'esempio più comune) nascono dallo studio dell'azione diretta della mano, lasciando ampia libertà all'immaginazione nella forma; i tasti sono modellati 'a ciotola poco profonda' (shallow bowls), forma gradevole alla vista e al tatto",Estratto DESIGN PROCESS OLIVETTI 1908 1983,design
+16,In che modo il design della Lettera 22 riflette le tendenze stilistiche del suo periodo?,partial,"unico elemento disponibile: il designer ha mantenuto in modo evidente l'aspetto 'a scatola' (box), esaltato da una sottile integrazione delle parti; colore uniforme beige-mastice con un unico accento rosso vivo sul tasto tabulatore. Nessun confronto esplicito con altre tendenze stilistiche coeve",Estratto DESIGN PROCESS OLIVETTI 1908 1983,design
+17,Come si presenta la disposizione dei tasti sulla Olivetti Lettera 22?,partial,"la tastiera ha 43 tasti (86 segni); due tasti delle maiuscole, tasto fissamaiuscole, barra spaziatrice, tasto del ritorno, tasto e leva dell'incolonnatore; disponibili tastiere speciali per le principali lingue straniere. Nessuna descrizione del layout fisico dei caratteri (es. QWERTY) nei documenti",istruzioni_lettera22_revisionato;Fogli Catalogo - Lettera 22 - fronte-retro,meccanica
+18,Quali premi di design ha vinto la Lettera 22?,yes,"Compasso d'Oro nel 1954; nel 1959 selezionata da una giuria dei 100 designer più noti al mondo come miglior prodotto industriale degli ultimi 100 anni, in un concorso sponsorizzato dall'Illinois Institute of Technology",Estratto DESIGN PROCESS OLIVETTI 1908 1983,design
+19,Qual è stata la strategia di marketing utilizzata per promuovere la Olivetti Lettera 22?,partial,"disponibile solo il testo pubblicitario del catalogo ('Una macchina per scrivere nelle nostre case'; enfasi su leggerezza, prezzo accessibile, varietà di colori per armonizzarla agli ambienti, portabilità in viaggio); nessuna strategia di marketing strutturata descritta",Fogli Catalogo - Lettera 22 - fronte-retro,marketing
+20,Quali sono stati i principali competitor della Lettera 22 nel mercato delle macchine da scrivere portatili?,no,,,marketing
+21,Qual è stato il prezzo di vendita iniziale della Olivetti Lettera 22?,no,,,marketing
+22,Come è cambiato il prezzo della Lettera 22 nel corso del tempo?,no,,,marketing
+23,In che modo la Olivetti Lettera 22 ha influenzato la cultura popolare?,partial,"la Lettera 22 è citata nel Museum of Modern Art Bulletin (New York, 1952) ed è esposta nella collezione permanente di design del MoMA di New York (secondo il testo vi figura almeno dal 1971, insieme a Lexikon 80 e microcomputer P 203). Nessun riferimento esplicito a cinema, musica o letteratura",Estratto DESIGN PROCESS OLIVETTI 1908 1983,cultura
+24,Quali scrittori famosi hanno citato la Lettera 22 nelle loro opere?,no,,,cultura
+25,Come è stata percepita la Lettera 22 nel mondo dell'arte e del design?,yes,"citata nel Museum of Modern Art Bulletin (New York, 1952) come esempio di design industriale ('Olivetti: Design in Industry'); esposta nella collezione permanente di design del MoMA; citazione critica di Nizzoli sul design delle leve; premiata con il Compasso d'Oro 1954",Estratto DESIGN PROCESS OLIVETTI 1908 1983,design
+26,Quali innovazioni tecnologiche erano presenti nella Olivetti Lettera 22 rispetto ai modelli precedenti?,partial,"meccanismo di scrittura 'Cinematico' ad accelerazione progressiva; regolatore del tocco a 4 posizioni; dispositivi tipici delle grandi macchine da ufficio ma inconsueti sulle portatili: regolatore del tocco, cestello mobile, guida del carrello su rulli a sfere, bobine del nastro di grandi dimensioni. Nessun confronto esplicito con precedenti modelli Olivetti",Fogli Catalogo - Lettera 22 - fronte-retro;istruzioni_lettera22_revisionato,meccanica
+27,In che modo la Lettera 22 ha influenzato lo sviluppo di future macchine da scrivere o dispositivi simili?,yes,"la Valentine (1969) è descritta come 'degna erede' della Lettera 22, pur essendo una macchina interamente nuova per forma e impostazione (non una semplice versione aggiornata). Il testo cita anche Dora e Lettera DL (1965), ma queste derivano dalla Lettera 32, non dalla 22",Estratto DESIGN PROCESS OLIVETTI 1908 1983,storia
+28,Quali sono le caratteristiche ergonomiche che rendono la Olivetti Lettera 22 facile da utilizzare?,yes,"dal manuale: facile da usare, leggera, silenziosa, tocco morbido ed elastico; strutture ridotte all'essenziale ma robuste; regolatore del tocco a 4 posizioni per adattare la pesantezza della tastiera alla mano di chi scrive (pos. 1 più leggero, pos. 4 più pesante)",istruzioni_lettera22_revisionato;Fogli Catalogo - Lettera 22 - fronte-retro,design
+29,In che modo la Lettera 22 è stata progettata per essere portatile e maneggevole?,yes,"dimensioni ridotte, peso minimo e prezzo accessibile uniti al maggior numero di prestazioni; entra in un cassetto della scrivania o esce dalla valigia, pronta sul tavolo di bar, albergo, treno; 'un dito basta a sollevarla, due a farla scrivere'; valigetta custodia robusta a richiesta",Fogli Catalogo - Lettera 22 - fronte-retro,design
+30,"Quali gruppi sociali hanno adottato maggiormente la Lettera 22 (studenti, giornalisti, ecc.)?",no,,,cultura
+31,Quale impatto ha avuto la Lettera 22 sul lavoro d'ufficio e sulla produttività personale?,partial,"solo copy pubblicitario generico del catalogo ('in ogni iniziativa di lavoro... vi aiuta e vi presenta'; ordine e chiarezza per lettere, scritture domestiche, appunti, copie di documenti); nessun dato concreto su produttività o impatto sul lavoro d'ufficio",Fogli Catalogo - Lettera 22 - fronte-retro,marketing
+32,Cosa è il prodotto olivetti Lettera 22?,yes,"macchina per scrivere portatile, leggera e resistente, di dimensioni ridotte, peso minimo e prezzo accessibile; garantisce scrittura precisa e allineamento rigoroso; adatta a lettere quotidiane, scritture domestiche, appunti scolastici, copie di documenti; industrial design di Marcello Nizzoli, introdotta nel 1950; premiata con il Compasso d'Oro 1954",Fogli Catalogo - Lettera 22 - fronte-retro;Estratto DESIGN PROCESS OLIVETTI 1908 1983,design
+33,Mi parleresti del prodotto olivetti valentine?,yes,"macchina per scrivere portatile; industrial design di Ettore Sottsass jr. con P. A. King; presentata nel 1969 (il depliant 'Bentornata Valentine' parla del 1968); scocca rosso-arancio segmentata in ABS stampato a iniezione, con maniglia e contenitore integrati, ganci in gomma neri e bottoni gialli delle bobine; descritta come oggetto 'anti-macchina', da portare con sé come una giacca o un cappello; nella collezione permanente di design del MoMA di New York dal 1971",Estratto DESIGN PROCESS OLIVETTI 1908 1983;Bentornata Valentine!,design
+34,Sono stati fatti dei poster per la valentine?,yes,"sì: pubblicità e poster per la Valentine realizzati da Ettore Sottsass jr. e Roberto Pieraccini, con i copywriter Giovanni Giudici e Luigi Fruttero; realizzato anche un bassorilievo (basrelief) della Valentine di Sottsass",Estratto DESIGN PROCESS OLIVETTI 1908 1983,marketing
+35,Adriano Olivetti è mai stato in America?,yes,sì: nel 1925 Adriano Olivetti parte per un viaggio di studio negli Stati Uniti e vi rientra nel 1926,Estratto DESIGN PROCESS OLIVETTI 1908 1983,storia
+36,Cosa è stato presentato nel 1961 da Ottavio Cascio?,yes,"il primo stabilimento di Scarmagno, progettato da Ottavio Cascio: 55.000 mq, con infermeria, mensa (1.200 posti), bar, sala e biblioteca; gli addetti a Scarmagno sono 800",Estratto DESIGN PROCESS OLIVETTI 1908 1983,storia
+37,Ci sono opere nel museo di arte moderna a New York?,yes,sì: nella collezione permanente di design del MoMA di New York figurano la Lettera 22 e la Valentine (il testo cita anche Lexikon 80 e il microcomputer P 203),Estratto DESIGN PROCESS OLIVETTI 1908 1983,cultura
+38,is there some product about Olivetti at the museum of modern art in New York?,yes,yes: MoMA's permanent design collection includes the Lettera 22 and the Valentine portable typewriters (the text also mentions the Lexikon 80 and the P 203 microcomputer),Estratto DESIGN PROCESS OLIVETTI 1908 1983,cultura
+39,Come faccio ad annullare tutti gli arresti nella lettera 22?,yes,"portare il carrello a capo, poi farlo scorrere all'estrema sinistra tenendo contemporaneamente spinta indietro la leva degli arresti 3; alla fine della corsa del carrello tutti gli arresti risultano eliminati",istruzioni_lettera22_revisionato,meccanica
+40,Mi descriveresti la leva del bicolore 18 della lettera 22?,yes,"la leva del bicolore 18 seleziona la parte del nastro: posizione alta = disco azzurro = parte superiore del nastro (blu/nera); posizione bassa = disco rosso = parte inferiore (rossa); posizione intermedia = disco bianco = esclude il nastro, per imprimere matrici per duplicatori",istruzioni_lettera22_revisionato,meccanica
+41,Cosa è il prodotto olivetti Valentine?,yes,macchina per scrivere portatile: industrial design di Ettore Sottsass jr. con P. A. King; graphic design e advertising di Sottsass con Roberto Pieraccini (ruolo distinto dal design del prodotto); scocca rossa in ABS stampato a iniezione con parti in lega metallica e maniglia incorporata; nella collezione permanente del MoMA di New York (dal 1971),Estratto DESIGN PROCESS OLIVETTI 1908 1983;Bentornata Valentine!,design
+42,Cosa è il prodotto olivetti Lettera 22?,yes,"macchina per scrivere portatile leggera e resistente, dimensioni ridotte, peso minimo, prezzo accessibile; scrittura precisa e allineamento rigoroso; industrial design di Marcello Nizzoli (1950); premiata con il Compasso d'Oro 1954",Fogli Catalogo - Lettera 22 - fronte-retro;Estratto DESIGN PROCESS OLIVETTI 1908 1983,design
+43,In che anno viene fondata Olivetti?,yes,"nel 1908, da Camillo Olivetti (principale investitore) con un capitale iniziale di 350.000 lire; lo stabilimento copre 500 mq e impiega 20 persone. La data esatta (29 ottobre 1908) e la sede di Ivrea non compaiono esplicitamente nel testo OCR",Estratto DESIGN PROCESS OLIVETTI 1908 1983,storia
+44,Quando muore Adriano Olivetti?,yes,"Adriano Olivetti muore il 27 febbraio 1960 ad Aigle, in Svizzera",Estratto DESIGN PROCESS OLIVETTI 1908 1983,storia
+45,Cosa mi racconti di Camillo e Adriano Olivetti?,yes,"Camillo Olivetti fonda l'azienda nel 1908; Adriano, figlio maggiore, inizia a lavorare in fabbrica nel 1924, parte per un viaggio di studio negli USA nel 1925 (rientro 1926), è nominato direttore generale nel 1933 e sostituisce il padre Camillo come presidente nel 1938 (quando Camillo si dimette da presidente pur restando attivo nell'azienda); Adriano muore nel 1960",Estratto DESIGN PROCESS OLIVETTI 1908 1983,storia
+46,In che anno è stato presentato il Programma 101 e perché è considerato storicamente rilevante?,partial,il Programma 101 (definito 'electronic desk-top computer') è presentato nel 1965 al B.E.M.A. di New York; il testo non spiega esplicitamente la sua rilevanza storica (nessun riferimento al fatto che sia considerato uno dei primi personal/desktop computer della storia),Estratto DESIGN PROCESS OLIVETTI 1908 1983,storia
+47,Chi ha progettato il Programma 101?,no,,,storia
+48,Che tipo di calcolatrice era il Programma 101 e quali erano le sue funzionalità principali?,no,,,meccanica
+49,Perché il Programma 101 viene chiamato anche 'Perottina'?,no,,,storia
+50,Dove e come è stato presentato al pubblico il Programma 101?,partial,presentato al B.E.M.A. (Business Equipment Manufacturers Association) di New York nel 1965; nessun dettaglio sulle modalità della presentazione al pubblico,Estratto DESIGN PROCESS OLIVETTI 1908 1983,storia
+51,In che modo il Programma 101 ha influenzato la storia dell'informatica personale?,no,,,storia

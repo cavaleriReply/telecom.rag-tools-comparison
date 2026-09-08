@@ -7,8 +7,9 @@ opzionali aggiunte a mano:
 
     id, question,
     answerable            -> yes | no | partial   (rispondibile dai 4 documenti?)
-    expected_source_docs  -> doc_id separati da ";"
     expected_points       -> testo libero: i punti chiave di una buona risposta
+    expected_source_docs  -> doc_id separati da ";"
+    category              -> etichetta libera (meccanica | storia | design | ...)
 
 Le colonne golden possono mancare (fase esplorativa): in quel caso i campi
 restano vuoti e le metriche che li richiedono vengono semplicemente saltate.
@@ -31,6 +32,7 @@ class GoldQuestion:
     answerable: Answerable = "unknown"
     expected_source_docs: tuple[str, ...] = ()
     expected_points: str = ""
+    category: str = ""
 
     @property
     def has_gold(self) -> bool:
@@ -59,6 +61,7 @@ def load_questions(csv_path: Path) -> list[GoldQuestion]:
             answerable=_parse_answerable(row.get("answerable", "")),
             expected_source_docs=_parse_docs(row.get("expected_source_docs", "")),
             expected_points=(row.get("expected_points", "") or "").strip(),
+            category=(row.get("category", "") or "").strip().lower(),
         )
         for row in rows
         if row.get("question", "").strip()

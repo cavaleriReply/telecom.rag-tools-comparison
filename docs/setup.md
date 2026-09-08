@@ -69,16 +69,20 @@ Idempotente: rilanciare non ri-trascrive (usa `--overwrite` per forzare).
 ## 4. Golden set (manuale, opzionale ma serve per le metriche)
 
 Apri `data/olivettiV0/competency_questions/competency_questions.csv` e aggiungi
-le colonne:
+le colonne (tutte opzionali):
 
-| colonna | valori |
-|---|---|
-| `answerable` | `yes` / `no` / `partial` |
-| `expected_source_docs` | doc_id separati da `;` |
-| `expected_points` | testo libero, i punti chiave attesi |
+| colonna | valori | serve per |
+|---|---|---|
+| `answerable` | `yes` / `no` / `partial` | recall, hallucination rate, corretta astensione |
+| `expected_points` | testo libero, i punti chiave attesi | precision/recall di contenuto (il giudice) |
+| `expected_source_docs` | doc_id (stem del file) separati da `;` | localizzare i fallimenti di retrieval |
+| `category` | etichetta libera (`meccanica`, `storia`, ...) | metriche per categoria (`by_category`) |
 
 Senza queste colonne il benchmark gira lo stesso, ma `metrics.py` salta le
-domande non annotate.
+domande non annotate (`skipped_no_gold`).
+
+Prima implementazione: 51/51 `answerable` (28 yes / 14 no / 9 partial), 37/51
+`expected_points`, tutte con `category`.
 
 ---
 
@@ -91,8 +95,11 @@ da `.env` via `adapters/_vertex.py`.
 poetry run python -m eval.run_benchmark lightrag --query-mode hybrid --limit 3   # prova rapida
 ```
 
-Working dir e grafo finiscono in `data/olivettiV0/lightrag_workdir/<config>/`
-(gitignored). L'ingest richiede qualche minuto (estrazione entità/relazioni).
+Working dir e grafo finiscono in `data/olivettiV0/lightrag_workdir/<config-hash>/`
+(gitignored). L'ingest richiede qualche minuto (estrazione entità/relazioni) **la
+prima volta**: il grafo persiste e i run successivi con la stessa config lo
+riusano (`ingest_seconds` in `run.json` lo mostra). Per rifare da zero: cancella
+la cartella dell'hash.
 
 ---
 
@@ -150,6 +157,20 @@ poetry run python -m eval.run_benchmark supermemory --query-mode hybrid --limit 
 
 ---
 
+## 6b. cognee
+
+Nessun setup extra: libreria Python (in `poetry install`), usa litellm → Vertex
+direttamente (nessuno shim). L'adapter imposta da sé le env che cognee richiede
+(`LLM_PROVIDER=custom`, ecc.) prima di importare cognee.
+
+```bash
+poetry run python -m eval.run_benchmark cognee --query-mode hybrid   # -> GRAPH_COMPLETION
+poetry run python -m eval.run_benchmark cognee --query-mode rag_completion
+```
+
+Store per hash-config in `data/olivettiV0/cognee_data/<hash>/` (gitignored),
+persistito e riusato dai run con la stessa config.
+
 ## 7. Benchmark completo + valutazione
 
 ```bash
@@ -162,9 +183,13 @@ poetry run python -m eval.judge   eval/results/<tool>/<slug>/<timestamp>
 
 # 3. metriche
 poetry run python -m eval.metrics eval/results/<tool>/<slug>/<timestamp>
+
+# 4. (opzionale) disaccordi gold vs giudice — per rivedere le annotazioni answerable
+poetry run python -m eval.review_gold eval/results/<tool>/<slug>/<timestamp>
 ```
 
-I risultati restano in `eval/results/<tool>/<config-slug>__<hash>/<timestamp>/`.
+I risultati restano in `eval/results/<tool>/<config-slug>__<hash>/<timestamp>/`
+(`answers.jsonl` è gitignored — grosso e rigenerabile).
 
 ---
 
@@ -176,6 +201,7 @@ I risultati restano in `eval/results/<tool>/<config-slug>__<hash>/<timestamp>/`.
 | `exceeds the pgvector HNSW limit of 2000` | Embedding a >2000 dim. Il progetto usa 1536 ovunque; se hai cambiato config, reset dello store (6c). |
 | supermemory: ingest "done" ma ricerca sempre vuota (0 risultati) | Lo shim restituisce una dimensione diversa da quella dello store. Verifica che lo script passi `--embedding-dimensions 1536` e fai reset dello store. |
 | supermemory: 0 memorie estratte | Lo shim non inoltra le tool-call. Assicurati di avere l'ultima versione di `scripts/vertex_openai_shim.py`. |
+| supermemory: `400 ... containerTag Must be 100 characters or less` | Risolto: l'adapter genera un tag corto (`olivettiV0__<mode>__<hash>`). Se rieseguito con codice vecchio, aggiorna. |
 | `address already in use :6799` | Shim di un run precedente ancora vivo. Lo script ora fa `pkill` all'avvio; altrimenti: `ps aux | grep '[v]ertex_openai_shim' ` e killa il PID. |
 | LightRAG: `Vector count mismatch` | Non dovrebbe capitare (dimensione verificata in `setup()`). Se capita, la dim richiesta ≠ quella resa da Vertex. |
 | 429 da Vertex | `adapters/_vertex.py` ritenta con backoff; se persiste, abbassa la concorrenza (`_EMBED_MAX_CONCURRENCY`, `--concurrency` nel judge). |

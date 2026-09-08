@@ -14,3 +14,12 @@ data/**/supermemory_data/
 
 # store locale supermemory creato se si lancia il binario dalla repo
 .supermemory/
+
+# lock file di LibreOffice/OpenOffice
+.~lock.*#
+
+# Risposte grezze dei run: grosse (MB), rigenerabili. Restano in locale.
+eval/results/**/answers.jsonl
+
+# Store di cognee (LanceDB + grafo ladybug)
+data/**/cognee_data/

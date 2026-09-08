@@ -1,7 +1,7 @@
 # telecom.rag-tools-comparison
 
-Confronto oggettivo di strumenti RAG / knowledge-retrieval (LightRAG, poi Cognee,
-supermemory, ...) sul caso della **documentazione museale Olivetti**.
+Confronto oggettivo di strumenti RAG / knowledge-retrieval (LightRAG, supermemory,
+cognee) sul caso della **documentazione museale Olivetti**.
 
 L'obiettivo non è solo un ranking per F1, ma **capire le cause tecniche** delle
 differenze di performance. Gli strumenti si testano **as-is**: gli adapter sono
