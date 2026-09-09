@@ -1,15 +1,16 @@
 # Dettagli implementativi
 
-Stato al **2026-09-07**. Questo documento descrive *come* è costruito il progetto.
-Per la due diligence dei singoli tool: [`lightrag.md`](lightrag.md), [`supermemory.md`](supermemory.md).
+Aggiornato **2026-09-09**. Questo documento descrive *come* è costruito il progetto.
+Due diligence dei singoli tool: [`lightrag.md`](lightrag.md), [`supermemory.md`](supermemory.md), [`cognee.md`](cognee.md).
+Guida da zero: [`setup.md`](setup.md).
 
 ---
 
 ## 1. Obiettivo e vincoli
 
-Confronto oggettivo di strumenti RAG / knowledge-retrieval sulla documentazione
-museale Olivetti. Interessa **il perché** delle differenze di performance, non solo
-un ranking per F1.
+Confronto oggettivo di strumenti RAG / knowledge-retrieval (**LightRAG**,
+**supermemory**, **cognee**) sulla documentazione museale Olivetti. Interessa
+**il perché** delle differenze di performance, non solo un ranking per F1.
 
 Vincoli che hanno guidato il design:
 
@@ -17,11 +18,11 @@ Vincoli che hanno guidato il design:
   solo i punti di estensione ufficiali.
 - **Stesso input per tutti.** Un unico passaggio di OCR produce il testo; ogni
   tool indicizza esattamente quei file.
-- **Stessi modelli dove possibile.** Un solo canale verso Gemini/Vertex
-  (`adapters/_vertex.py`), stesse variabili `.env`. Se un tool si comporta
+- **Stessi modelli.** Un solo canale verso Gemini/Vertex (`adapters/_vertex.py`),
+  stesse variabili `.env`, embedding a **1536 dim** ovunque. Se un tool si comporta
   diversamente, non è perché "parla" con Vertex in modo diverso.
 - **Fase esplorativa.** Evaluation snella: label discrete + P/R/F1 + poche
-  metriche di supporto. Niente scoring continuo.
+  metriche di supporto.
 
 ---
 
@@ -31,28 +32,33 @@ Vincoli che hanno guidato il design:
 data/olivettiV0/
   docs/                  4 PDF sorgente (Lettera 22, Valentine, Programma 101, design process)
   ocr/                   testo estratto, <stem>.txt — INPUT COMUNE a tutti gli adapter
-  competency_questions/  competency_questions.csv (domande + golden set opzionale)
-  lightrag_workdir/      artefatti LightRAG per config (gitignored)
-  supermemory_data/      store del server supermemory self-hosted (gitignored)
+  competency_questions/  competency_questions.csv (domande + golden set)
+  lightrag_workdir/<hash>/   artefatti LightRAG per config (gitignored)
+  supermemory_data/         store del server supermemory self-hosted (gitignored)
+  cognee_data/<hash>/        store cognee: LanceDB + grafo ladybug (gitignored)
 
 preprocessing/           OCR: PDF -> testo
 adapters/
   base.py                interfaccia standard (Document, AdapterAnswer, RAGAdapter)
   _vertex.py             accesso condiviso a Gemini/Vertex via litellm
-  _rag_prompt.py         generazione risposta per i tool retrieval-only
-  lightrag_adapter.py    adapter LightRAG
-  supermemory_adapter.py adapter supermemory
+  _rag_prompt.py         generazione risposta per i tool retrieval-only (supermemory)
+  lightrag_adapter.py    adapter LightRAG   (libreria, litellm iniettato)
+  supermemory_adapter.py adapter supermemory (binario, via shim)
+  cognee_adapter.py      adapter cognee     (libreria, litellm nativo)
 eval/
   dataset.py             caricamento domande + golden set
   run_benchmark.py       fase 1: esegue le domande su un tool -> answers.jsonl
   judge.py               fase 2: giudice LLM -> judgements.jsonl
   metrics.py             fase 3: aggregazione -> metrics.json
-  results_store.py       layout su disco dei risultati
+  review_gold.py         report disaccordi gold-vs-giudice (revisione annotazioni)
+  results_store.py       layout su disco + config_hash()
   results/<tool>/<config-slug>__<hash>/<timestamp>/   un run
 
 scripts/
-  vertex_openai_shim.py       shim OpenAI-compatible (chat + embeddings) verso Vertex, per supermemory
-  supermemory_local.sh        avvia shim + supermemory-server self-hosted
+  vertex_openai_shim.py  shim OpenAI-compatible (chat + embeddings) verso Vertex, per supermemory
+  supermemory_local.sh   avvia shim + supermemory-server self-hosted
+
+docs/                    setup.md, implementazione.md, lightrag.md, supermemory.md, cognee.md
 ```
 
 ---
@@ -60,14 +66,15 @@ scripts/
 ## 3. Il flusso
 
 ```
-PDF ──(preprocessing)──► ocr/*.txt ──┬─► LightRAGAdapter ──┐
-                                     └─► SupermemoryAdapter ─┤
-                                                            ▼
+PDF ─(preprocessing)─► ocr/*.txt ─┬─► LightRAGAdapter ────┐   (genera la risposta)
+                                  ├─► CogneeAdapter ──────┤   (genera la risposta)
+                                  └─► SupermemoryAdapter ─┤   (recupera; genera _rag_prompt)
+                                                          ▼
 competency_questions.csv ──► run_benchmark ──► answers.jsonl
                                                   │
                                     judge ──► judgements.jsonl
                                                   │
-                                   metrics ──► metrics.json
+                                   metrics ──► metrics.json   (+ review_gold sulle annotazioni)
 ```
 
 Le 3 fasi di eval sono **disaccoppiate**: si può ri-giudicare o ricalcolare le
@@ -84,7 +91,7 @@ metriche senza rieseguire i tool (che costano tempo e chiamate LLM).
   Idempotente (salta i `.txt` già presenti), parallelo sui documenti.
 - Comando: `poetry run python -m preprocessing`
 
-Risultato attuale: 4 file, ~1.500 righe. Testo pulito pagina per pagina.
+Risultato: 4 file, ~1.500 righe. Testo pulito pagina per pagina.
 
 ---
 
@@ -103,7 +110,7 @@ class AdapterAnswer:
     contexts: list[str]    # frammenti recuperati -> context recall + analisi cause
     raw: dict              # risposta grezza del tool, NON pulita -> analisi cause
 
-class RAGAdapter(Protocol):     # async
+class RAGAdapter(Protocol):     # async, structural typing (niente ereditarietà)
     name: str
     async def setup(self) -> None          # idempotente
     async def ingest(self, documents) -> None
@@ -115,8 +122,8 @@ class RAGAdapter(Protocol):     # async
   `Document`, stesso ordine, per tutti i tool.
 - Il codice di `eval/` parla **solo** con `RAGAdapter`. Ogni differenza tra tool
   vive dentro il rispettivo adapter.
-- Convenzione (non nel Protocol ma rispettata da entrambi): `describe()` ritorna
-  un dict con `tool`, `config`, i modelli usati, ecc. → finisce in `run.json`.
+- Convenzione: `describe()` ritorna un dict con `tool`, `config`, i modelli usati,
+  ecc. → finisce in `run.json` (richiamato dopo `setup()`, così ha i valori risolti).
 
 ---
 
@@ -127,401 +134,385 @@ Un solo punto di contatto con Gemini/Vertex, via `litellm`. Legge `LLM_MODEL` e
 
 | Funzione | Cosa fa |
 |---|---|
-| `acompletion(messages, *, model=None, **kwargs)` | completion, ritorna solo il testo |
-| `aembed(texts, *, model=None, dimensions=None)` | embedding di una lista → `np.ndarray (n, dim)` |
+| `acompletion_message(messages, **kwargs)` | completion → dict `{content, tool_calls, finish_reason}` (formato OpenAI) |
+| `acompletion(messages, **kwargs)` | come sopra ma ritorna solo il testo |
+| `aembed(texts, *, dimensions=None)` | embedding di una lista → `np.ndarray (n, dim)`, L2-normalizzato |
 | `probe_embedding_dim(dimensions=)` | verifica con una chiamata reale che dimensione escono i vettori |
 | `llm_model()` / `embedding_model()` | i nomi modello da `.env` |
 
 Dettagli:
 
-- **Retry** (`tenacity`) con backoff esponenziale su errori transitori di Vertex
-  (`RateLimitError`, `InternalServerError`, `Timeout`, ...). Gli errori di
-  prompt/permessi NON vengono ritentati.
+- **Retry** (`tenacity`) con backoff su errori transitori di Vertex
+  (`RateLimitError`, `InternalServerError`, `Timeout`, ...). Errori di
+  prompt/permessi NON ritentati. `litellm.suppress_debug_info = True` (i banner).
 - **Embedding in parallelo** con un semaforo (`_EMBED_MAX_CONCURRENCY = 8`):
-  `gemini-embedding-001` accetta una sola istanza per richiesta, quindi la "batch"
-  la facciamo noi. In sequenza l'ingest di LightRAG (centinaia di embedding di
-  entità/relazioni) sarebbe lentissimo.
-- **`dimensions`**: passato a Vertex come `output_dimensionality`. Il progetto usa
-  **1536** ovunque (vedi §11). `None` = dimensione nativa (3072).
-- **Normalizzazione L2**: `gemini-embedding-001` restituisce vettori unitari solo
-  a 3072 dim; a taglie ridotte no. `aembed` L2-normalizza sempre, così ogni vector
-  store si comporta uguale a prescindere dalla metrica.
+  `gemini-embedding-001` accetta una sola istanza per richiesta.
+- **`tool_calls`**: `acompletion_message` normalizza le function-call di Gemini
+  in forma OpenAI — serve allo shim (supermemory estrae le memorie con un agente).
+- **`dimensions`** → `output_dimensionality`. Progetto = **1536** (vedi §12).
+- **Normalizzazione L2**: `gemini-embedding-001` è unitario solo a 3072; sotto no
+  → `aembed` normalizza sempre.
 
 ---
 
 ## 7. Generazione per i tool retrieval-only — `adapters/_rag_prompt.py`
 
-Alcuni tool (supermemory) recuperano passaggi ma **non generano** la risposta.
-Per non introdurre differenze dovute a prompt diversi, tutti questi tool usano lo
-stesso `answer_from_contexts(question, contexts)`:
+Solo **supermemory** recupera passaggi senza generare (LightRAG e cognee generano
+da sé). `answer_from_contexts(question, contexts)`:
 
-- prompt minimale, volutamente "povero": *"rispondi solo con quello che c'è nel
-  contesto, altrimenti dichiara di non sapere"*. Niente prompt engineering: quello
-  che misuriamo è il **retrieval**, non il prompt.
-- stesso LLM di tutti (`gemini-2.5-flash` via `_vertex.acompletion`).
-- se `contexts` è vuoto → risposta fissa "Non ho trovato questa informazione nei documenti."
+- prompt minimale e neutro: *"rispondi solo con quello che c'è nel contesto,
+  altrimenti dichiara di non sapere"*. Niente prompt engineering: quello che
+  misuriamo per supermemory è il **retrieval**.
+- stesso LLM di tutti (`gemini-2.5-flash` via `_vertex`).
+- `contexts` vuoto → "Non ho trovato questa informazione nei documenti."
 
 ---
 
 ## 8. Adapter LightRAG — `adapters/lightrag_adapter.py`
 
-LightRAG **v1.5.7** (pinnata in `pyproject.toml`; l'API cambia spesso).
+LightRAG **v1.5.7** (pinnata; l'API cambia spesso).
 
 ### Come è usato as-is
 
 LightRAG accetta `llm_model_func` e `embedding_func` come parametri: è il suo
-punto di estensione ufficiale. Non tocchiamo il suo codice.
+punto di estensione ufficiale.
 
-- `_llm_model_func(prompt, system_prompt, history_messages, **kwargs)` — LightRAG
-  aggiunge kwargs interni (`hashing_kv`, `_priority`, `enable_cot`, `stream`, ...):
-  li ignoriamo, inoltriamo a Vertex solo `response_format` (che LightRAG usa per
-  farsi dare JSON valido durante l'estrazione keyword).
-- `_build_embedding_func(embedding_dim)` — avvolge `_vertex.aembed` nel wrapper
-  `EmbeddingFunc` di LightRAG.
+- `_llm_model_func(prompt, system_prompt, history_messages, **kwargs)` — ignora i
+  kwargs interni di LightRAG, inoltra a Vertex solo `response_format`.
+- `_build_embedding_func(embedding_dim)` — avvolge `_vertex.aembed` (con
+  `dimensions=1536`) nel wrapper `EmbeddingFunc` di LightRAG.
 
-### `LightRAGConfig` (parametri nativi esposti)
+### `LightRAGConfig`
 
 `query_mode` (naive|local|global|hybrid|mix), `top_k`, `chunk_top_k`,
-`chunk_token_size`, `chunk_overlap_token_size`, `enable_rerank=False` (nessun
-reranker configurato → retrieval "puro"), `embedding_dimensions=1536` (§11).
+`chunk_token_size`, `chunk_overlap_token_size`, `enable_rerank=False`,
+`embedding_dimensions=1536`.
 
 ### Ciclo di vita
 
-- `setup()` — prende `embedding_dimensions` dalla config e **verifica** con una
-  chiamata reale che Vertex la onori, poi costruisce `LightRAG(...)` e
-  `initialize_storages()`.
-- `ingest(documents)` — `rag.ainsert(input=[...], ids=[doc_id], file_paths=[doc_id])`.
-  `doc_id` come `file_path` → i frammenti recuperati sono riconducibili al documento.
-  Fa chunking + estrazione entità/relazioni via LLM + costruzione grafo + indici.
-- `query(question)` — usa `rag.aquery_llm(...)`: una sola chiamata restituisce
-  risposta **e** dati recuperati (entità, relazioni, chunk). `_extract_contexts`
-  li appiattisce in `contexts`. `raw` porta `status`, `llm_generated`
-  (`False` = risposta "canned" di LightRAG, nessun contesto trovato), `data`, `metadata`.
-- `teardown()` — `finalize_storages()` (flush su disco).
+- `setup()` — verifica con una chiamata che Vertex renda 1536 dim, poi costruisce
+  `LightRAG(...)` e `initialize_storages()`. Working dir = `lightrag_workdir/<config-hash>/`,
+  persistito e riusato dai run con la stessa config.
+- `ingest(documents)` — `rag.ainsert(input=[...], ids=[doc_id], file_paths=[doc_id])`:
+  chunking + estrazione entità/relazioni via LLM + costruzione grafo + indici.
+- `query(question)` — `rag.aquery_llm(...)`: una chiamata restituisce risposta **e**
+  dati recuperati (entità, relazioni, chunk). `_extract_contexts` li appiattisce.
+- `teardown()` — `finalize_storages()`.
 
 ### Il bug dell'embedding_dim che evitiamo
 
 Il binding ufficiale `lightrag.llm.gemini.gemini_embed` dichiara `embedding_dim=1536`
-ma l'API restituisce 3072. Il wrapper `EmbeddingFunc.__call__` conta i vettori con
-`total_elementi // embedding_dim` usando il valore **dichiarato** → ogni batch
-risulta 2× → `ValueError: Vector count mismatch`.
-
-**Noi non lo abbiamo** perché la stessa `embedding_dimensions` è sia ciò che
-chiediamo a Vertex (`output_dimensionality`) sia ciò che dichiariamo a LightRAG,
-e `setup()` verifica la coincidenza con una chiamata reale. Dichiarato == reale
-per costruzione.
-
-### Smoke test (2026-09-07)
-
-Ingest 4 doc OK; 3 query corrette (dimensioni+peso Lettera 22, designer,
-fondazione Olivetti 1908). `contexts` ~220-300 elementi per query (tutto il
-retrieved di `hybrid`, `top_k=40`). Ingest lento (~minuti: estrazione entità +
-gleaning su 16 chunk).
+ma l'API restituisce 3072 → `ValueError: Vector count mismatch`. Noi non lo abbiamo:
+la stessa `embedding_dimensions` è sia ciò che chiediamo a Vertex sia ciò che
+dichiariamo a LightRAG, e `setup()` verifica la coincidenza.
 
 ---
 
-## 9. Adapter supermemory — `adapters/supermemory_adapter.py`
+## 9. Adapter cognee — `adapters/cognee_adapter.py`
 
-supermemory è un **motore di memoria/contesto**, non una libreria RAG generativa.
+cognee **v1.5.4** (pinnata). È una **libreria Python** e usa **litellm nativamente**
+→ **nessuno shim**: la puntiamo su Vertex e cognee **genera la risposta**.
 
-### Differenza architetturale chiave: 3 ruoli LLM distinti
+### Configurazione (env prima di `import cognee`)
 
-| Ruolo | Chi lo fa | Modello |
+cognee deduce il provider da `LLM_MODEL` **all'import** e va in errore su
+`vertex_ai/...`. L'adapter imposta, in cima al modulo, prima dell'import:
+
+```
+LLM_PROVIDER=custom            # endpoint litellm-routed -> Vertex col service account
+LLM_API_KEY=<dummy non vuoto>  # il preflight lo pretende; litellm non lo usa per vertex_ai/
+EMBEDDING_PROVIDER=custom
+EMBEDDING_API_KEY=<dummy>
+EMBEDDING_DIMENSIONS=1536
+ENABLE_BACKEND_ACCESS_CONTROL=false   # niente multi-tenant
+CACHING=false                          # niente session memory tra le query
+```
+
+`LLM_MODEL` / `EMBEDDING_MODEL` / `VERTEXAI_*` / `GOOGLE_APPLICATION_CREDENTIALS`
+li legge dal `.env` del progetto → stessi modelli di LightRAG/supermemory.
+
+### `CogneeConfig`
+
+`search_type` (`GRAPH_COMPLETION` default = vettori + struttura grafo, analogo di
+LightRAG `hybrid`; `RAG_COMPLETION` = RAG classico a chunk), `top_k`,
+`embedding_dimensions=1536`.
+
+### Ciclo di vita
+
+- `setup()` — `cognee.config.system_root_directory()` + `data_root_directory()`
+  puntano lo store a `cognee_data/<config-hash>/` (LanceDB vettori + grafo ladybug).
+  Al primo avvio cognee fa ~50 migrazioni Alembic dello schema (lente, una tantum).
+- `ingest(documents)` — `cognee.add(text, dataset_name=...)` per doc, poi
+  `cognee.cognify(datasets=[...])` = ECL (Extract, Cognify, Load): chunking +
+  estrazione entità/relazioni + knowledge graph. `incremental_loading` salta il già fatto.
+- `query(question)` — `cognee.search(query_text, query_type, datasets, top_k)` →
+  lista con la stringa generata. Una seconda `search(SearchType.CHUNKS)` per i
+  `contexts` (chunk grezzi, in italiano).
+- `teardown()` — niente: lo store è isolato per hash.
+
+### Limite noto
+
+Errori SQLAlchemy non fatali sul DB di bookkeeping (`pipeline_runs`) — spariti
+con lo store per-hash isolato (DB fresco → Alembic migra pulito).
+
+---
+
+## 10. Adapter supermemory — `adapters/supermemory_adapter.py`
+
+supermemory è un **motore di memoria conversazionale**, non una libreria RAG
+generativa. Binario self-hosted (`supermemory-server` lite, TypeScript/bun).
+
+### 3 ruoli LLM distinti
+
+| Ruolo | Chi | Modello |
 |---|---|---|
-| **Embedder** | server supermemory (in ingest e query) | `gemini-embedding-001` @ 1536d, via shim (§10) |
-| **Estrazione** ("dreaming": fatti/relazioni → grafo) | server supermemory (in ingest) | `gemini-2.5-flash`, via shim |
+| **Embedder** (ingest + query) | server supermemory | `gemini-embedding-001` @ 1536d, via shim (§11) |
+| **Estrazione** ("dreaming": memorie → grafo temporale) | server supermemory | `gemini-2.5-flash`, via shim |
 | **Generazione** risposta | **il nostro adapter** (`_rag_prompt`) | `gemini-2.5-flash` |
 
-Tutti e tre i ruoli passano da Vertex, con lo stesso service account e (embedder
-+ generazione) gli stessi identici modelli di LightRAG.
-
-supermemory NON genera la risposta: `search` restituisce solo passaggi/memorie.
-Quindi con supermemory misuriamo soprattutto la **qualità del retrieval**, a
-generazione costante.
+supermemory NON genera: `search` restituisce solo passaggi/memorie. Con
+supermemory misuriamo soprattutto la **qualità del retrieval**, a generazione costante.
 
 ### `SupermemoryConfig`
 
 `search_mode` (memories|documents|hybrid), `limit`, `rerank`, `threshold`,
-`rewrite_query`, `dreaming` ("instant" = grafo subito, predicibile per un
-benchmark), `base_url` (None = hosted, valorizzato = self-hosted),
-`cleanup_on_teardown`.
+`rewrite_query`, `dreaming` ("instant" = grafo subito). `base_url` e
+`cleanup_on_teardown` sono **campi operativi**, esclusi da `as_dict()` (non
+influenzano i risultati né lo slug/hash).
 
 ### Ciclo di vita
 
-- `setup()` — crea `AsyncSupermemory(api_key=..., base_url=...)`.
-- `ingest(documents)` — `documents.add(content, container_tag, custom_id, metadata,
-  dreaming)` è **asincrono**: ritorna subito un id. `_wait_until_ready` fa polling
-  su `documents.get(id)` finché `status == "done"` (e, per hybrid/memories,
-  `dreaming_status == "done"`). Timeout 30 min, poll 5 s.
-  Nota: `custom_id` accetta solo `[A-Za-z0-9_:-]` → `_safe_id()` slugifica il
-  `doc_id` (che resta intero in `metadata["doc_id"]`).
-- `query(question)` — `search.memories(q, container_tag, search_mode, limit,
-  rerank, threshold, rewrite_query)` → `_extract_contexts` raccoglie `memory`,
-  `chunk`, `chunks[].content`, e il vicinato nel grafo (`context.parents/children/
-  related`). Poi `answer_from_contexts` genera la risposta.
-- `teardown()` — se `cleanup_on_teardown`, `documents.delete_bulk(container_tags=[tag])`,
-  poi `client.close()`.
+- `setup()` — `AsyncSupermemory(api_key=..., base_url=...)`. Key fittizia ok su localhost.
+- `ingest(documents)` — `documents.add(...)` è **asincrono**: `_wait_until_ready`
+  fa polling su `documents.get(id)` finché `status == "done"` (+ `dreaming_status`
+  per hybrid/memories). `custom_id` accetta solo `[A-Za-z0-9_:-]` → `_safe_id()`
+  slugifica il `doc_id` (che resta intero in `metadata`).
+- `query(question)` — `search.memories(...)` → `_extract_contexts` raccoglie
+  `memory` / `chunk` / vicinato del grafo → `answer_from_contexts` genera.
+- `teardown()` — se `cleanup_on_teardown`, `documents.delete_bulk(container_tags=[tag])`.
 
-### Isolamento dei run
+### Isolamento
 
-`container_tag` = namespace per (tool, config): `olivettiV0__<config-slug>`. Due
-run non si contaminano; il cleanup cancella solo il proprio container.
-
-### Stato
-
-Adapter completo, `describe()` verificato. **Non ancora smoke-tested end-to-end**:
-serve il binario supermemory installato e in esecuzione.
+`container_tag` = `olivettiV0__<mode>__<hash8>` (≤100 char: limite di supermemory).
+Lo store persiste tra run del server, ma `cleanup_on_teardown` cancella il
+container → ogni run ri-ingesta da zero.
 
 ---
 
-## 10. Lo shim OpenAI→Vertex — `scripts/vertex_openai_shim.py`
+## 11. Lo shim OpenAI→Vertex — `scripts/vertex_openai_shim.py`
 
 ### Perché esiste
 
-`supermemory-server` (edizione **lite**) accetta come "model provider" solo chiavi
-a token: `OPENAI_API_KEY | ANTHROPIC_API_KEY | GEMINI_API_KEY | GROQ_API_KEY`.
-Non supporta Vertex direttamente, e la `GEMINI_API_KEY` è di Google AI Studio, che
-non abbiamo (abbiamo solo il service account Vertex). Come provider di embedding
-accetta solo `local | openai | gemini`.
+`supermemory-server` (lite) accetta come model provider solo chiavi a token
+(`OPENAI_API_KEY | ANTHROPIC_API_KEY | GEMINI_API_KEY | GROQ_API_KEY`); **non
+supporta Vertex**, e non abbiamo una `GEMINI_API_KEY` di AI Studio. Come provider
+di embedding: solo `local | openai | gemini`.
+
+(cognee e LightRAG **non** hanno bisogno dello shim: sono librerie Python che
+usano litellm direttamente.)
 
 ### Cos'è
 
-Un mini-server HTTP (aiohttp, ~200 righe, nessuna dipendenza nuova) che **finge di
-essere OpenAI** e inoltra tutto a Vertex, riusando `adapters._vertex`:
+Mini-server HTTP (aiohttp, ~230 righe, nessuna dipendenza nuova) che **finge di
+essere OpenAI** e inoltra a Vertex, riusando `adapters._vertex`:
 
 | Endpoint | Backend | Note |
 |---|---|---|
-| `POST /v1/chat/completions` | `_vertex.acompletion_message` → `gemini-2.5-flash` | inoltra `tools`/`tool_choice` e ritorna `tool_calls` — l'estrazione memorie di supermemory è un **agente a function-calling**. Stream "finto" (un chunk). |
-| `POST /v1/embeddings` | `_vertex.aembed` → `gemini-embedding-001` | default `--embedding-dimensions 1536`: supermemory **non manda `dimensions`** nella richiesta pur avendo il piano a 1536 |
+| `POST /v1/chat/completions` | `_vertex.acompletion_message` → `gemini-2.5-flash` | inoltra `tools`/`tool_choice` e ritorna `tool_calls` — l'estrazione memorie di supermemory è un **agente a function-calling** (fino a 40 step). Stream "finto" (un chunk). |
+| `POST /v1/embeddings` | `_vertex.aembed` → `gemini-embedding-001` | `--embedding-dimensions 1536` come default: supermemory **non manda `dimensions`** |
 | `GET /v1/models`, `GET /health` | statici | |
 
-`SHIM_DEBUG=1` attiva un middleware che logga metodo/path/body di ogni richiesta.
+`SHIM_DEBUG=1` → middleware che logga metodo/path/body di ogni richiesta.
 
 ```
 supermemory ──"OpenAI (chat + embeddings)"──► SHIM :6799 ──► Vertex (service account)
-            ◄──"risposte formato OpenAI"─────  SHIM       ◄──
 ```
 
-supermemory viene configurato (da `supermemory_local.sh`) con:
-```
-OPENAI_API_KEY=sk-shim-not-used            # deve solo ESISTERE (lo shim ignora l'auth)
-OPENAI_BASE_URL=http://127.0.0.1:6799/v1
-OPENAI_MODEL / OPENAI_FAST_MODEL / OPENAI_TEXT_MODEL = gemini-2.5-flash
-SUPERMEMORY_EMBEDDING_PROVIDER=openai
-SUPERMEMORY_EMBEDDING_BASE_URL=http://127.0.0.1:6799/v1
-SUPERMEMORY_EMBEDDING_MODEL=gemini-embedding-001
-SUPERMEMORY_EMBEDDING_DIMENSIONS=1536
-```
-
-### Vantaggi
-
-- Non tocchiamo né supermemory né Vertex (vincolo as-is).
-- **Embedder e LLM identici a LightRAG**: stessa funzione, stesso modello, stessa
-  normalizzazione → stesso spazio di embedding, confronto sul retrieval pulito.
-- Nessuna `GEMINI_API_KEY`: usa il service account Vertex.
-- **Anche il modello di estrazione è pinnato** esatto a `gemini-2.5-flash`.
-
-### Comportamento su `dimensions`
-
-Se la richiesta include `dimensions`, lo shim lo gira a Vertex come
-`output_dimensionality` e **fa `raise` se il vettore che torna non è di quella
-taglia** — meglio un errore rumoroso che vettori sbagliati nel DB di supermemory.
+Config passata da `supermemory_local.sh`: `OPENAI_API_KEY=sk-shim-not-used`,
+`OPENAI_BASE_URL`, `OPENAI_MODEL/FAST/TEXT=gemini-2.5-flash`,
+`SUPERMEMORY_EMBEDDING_PROVIDER=openai` + `_BASE_URL` + `_MODEL=gemini-embedding-001`
++ `_DIMENSIONS=1536`.
 
 ---
 
-## 11. La questione delle dimensioni degli embedding
+## 12. La questione delle dimensioni degli embedding
 
-`gemini-embedding-001` ha dimensione **nativa 3072** (dove i vettori sono anche
-L2-normalizzati), ma supporta tagli inferiori (128–3072) via `output_dimensionality`
-(dove **non** sono normalizzati → lo fa `_vertex.aembed`).
+`gemini-embedding-001` ha dimensione **nativa 3072** (L2-normalizzata solo lì).
+**Il progetto usa 1536 ovunque**: il vector store di supermemory (pgvector + HNSW)
+ha un limite rigido di **2000 dim** — a 3072 il server non parte. 1536 è una
+taglia Matryoshka di prima classe. LightRAG e cognee usano la stessa taglia per
+**parità di embedder**.
 
-**Il progetto usa 1536 dim ovunque.** Motivo: il vector store di supermemory
-(**pgvector + indice HNSW**) ha un limite rigido di **2000 dimensioni**. A 3072
-`supermemory-server` rifiuta di partire. 1536 è una taglia di prima classe per
-`gemini-embedding-001` (addestramento Matryoshka), perdita di qualità minima.
-LightRAG usa la stessa taglia (`LightRAGConfig.embedding_dimensions = 1536`) per
-**parità di embedder** nel confronto.
-
-Ogni giunzione dove una dimensione può sballare, e come la chiudiamo:
-
-| Giunzione | Rischio | Come è garantita la compatibilità |
+| Giunzione | Rischio | Come è chiusa |
 |---|---|---|
-| LightRAG ↔ nano-vectordb | dichiarare una dim ≠ reale → "Vector count mismatch" | `embedding_dimensions` (1536) è sia ciò che si chiede a Vertex sia ciò che si dichiara a LightRAG; `setup()` verifica con una chiamata reale |
-| supermemory ↔ shim | supermemory **non manda `dimensions`** → lo shim darebbe i 3072 nativi → non entrano in `vector(1536)` → chunk non indicizzati (silenziosamente) | lo shim ha `--embedding-dimensions 1536` come default, e fa `raise` se la taglia ottenuta non combacia |
-| supermemory ↔ pgvector | dim > 2000 → il server non parte; il DB si "blocca" sulla prima dim vista | `SUPERMEMORY_EMBEDDING_DIMENSIONS=1536` + cartella dati creata vuota con questa config |
-| LightRAG ↔ supermemory (il confronto) | embedder diversi → spazi non confrontabili | stesso modello, stessa dim (1536), stesso codice (`_vertex.aembed`), stessa normalizzazione |
+| LightRAG ↔ nano-vectordb | dim dichiarata ≠ reale → "Vector count mismatch" | `embedding_dimensions` (1536) = ciò che si chiede a Vertex **e** ciò che si dichiara; `setup()` verifica |
+| supermemory ↔ shim | supermemory non manda `dimensions` → 3072 → non entra in `vector(1536)` → chunk non indicizzati (silenzioso) | shim `--embedding-dimensions 1536` di default, `raise` se non combacia |
+| supermemory ↔ pgvector | dim > 2000 → server non parte; store bloccato sulla prima dim | `SUPERMEMORY_EMBEDDING_DIMENSIONS=1536` + cartella dati vuota |
+| cognee ↔ LanceDB | LanceDB non ha limiti di dim | `EMBEDDING_DIMENSIONS=1536` per parità, non per necessità |
+| confronto tra i 3 | embedder diversi → spazi non confrontabili | stesso modello, stessa dim, stesso codice `_vertex.aembed`, stessa normalizzazione |
 
-### Accortezze operative
-
-- La cartella `data/olivettiV0/supermemory_data/` va creata **vuota** con questa
-  config.
-- **Mai lanciare `supermemory-server` da solo**: userebbe il default
-  `Xenova/bge-base-en-v1.5` a 768d e bloccherebbe lo store a 768. Sempre via
-  `./scripts/supermemory_local.sh`. (Se il binario lo lancia da sé dopo l'install,
-  fermarlo con Ctrl-C.)
-- Se un domani si cambia la dimensione: prima svuotare la cartella. (supermemory
-  comunque blocca il mix di dimensioni con un errore, non corrompe in silenzio.)
+**Accortezze:** mai lanciare `supermemory-server` da solo (userebbe `bge-base-en-v1.5`
+768d); se si cambia dimensione, svuotare prima gli store.
 
 ---
 
-## 12. Setup supermemory self-hosted — `scripts/supermemory_local.sh`
+## 13. Setup supermemory self-hosted — `scripts/supermemory_local.sh`
 
-Lo script:
+1. carica le credenziali Vertex dal `.env`;
+2. `pkill` di shim rimasti, avvia lo shim (`:6799`), ne attende l'health;
+3. configura il server: tutto verso lo shim, dim 1536;
+4. `exec supermemory-server` (`:6767`); `trap` uccide lo shim all'uscita.
 
-1. carica le credenziali Vertex dal `.env` del progetto (`VERTEXAI_*`,
-   `GOOGLE_APPLICATION_CREDENTIALS`, `LLM_MODEL`, `EMBEDDING_MODEL`);
-2. avvia lo shim (`:6799`) in background e ne attende l'health;
-3. configura il server: **tutto** verso lo shim via `OPENAI_BASE_URL` +
-   `OPENAI_MODEL=gemini-2.5-flash` e `SUPERMEMORY_EMBEDDING_BASE_URL` +
-   `SUPERMEMORY_EMBEDDING_DIMENSIONS=1536`;
-4. `exec supermemory-server` (`:6767`); un `trap` uccide lo shim all'uscita.
-
-Prerequisito: binario installato con `curl -fsSL https://supermemory.ai/install | bash`
-(userspace, `~/.supermemory/bin` + `~/.local/bin` — quest'ultimo è già nel PATH —,
-no sudo, no Node, verifica SHA256). Al wizard: scegliere **4 (Skip)** — la config
-la passa lo script via env.
-⚠️ `~/.supermemory/` contiene **anche il binario**, non solo dati: non cancellarla.
-
-`scripts/supermemory.env` (gitignored) è opzionale: solo override di porte /
-data dir. Nel `.env` del progetto: `SUPERMEMORY_BASE_URL="http://localhost:6767"`.
+Prerequisito: `curl -fsSL https://supermemory.ai/install | bash` (userspace, no
+sudo, no Node). Al wizard: **4 (Skip)**. ⚠️ `~/.supermemory/` contiene **anche il
+binario** — non cancellarla. Nel `.env`: `SUPERMEMORY_BASE_URL="http://localhost:6767"`.
 
 ---
 
-## 13. Evaluation — `eval/`
+## 14. Evaluation — `eval/`
 
 ### Golden set — `dataset.py`
 
-Estende `competency_questions.csv` con colonne **opzionali** (compilate a mano):
+`competency_questions.csv` con colonne (compilate a mano, tutte opzionali):
 
-| colonna | valori | significato |
+| colonna | valori | per |
 |---|---|---|
-| `answerable` | `yes` / `no` / `partial` | rispondibile dai 4 documenti? |
-| `expected_source_docs` | doc_id separati da `;` | documenti attesi |
-| `expected_points` | testo libero | punti chiave di una buona risposta |
+| `answerable` | `yes` / `no` / `partial` | recall, hallucination, astensione |
+| `expected_points` | testo libero | precision/recall di contenuto |
+| `expected_source_docs` | doc_id separati da `;` | localizzare i fallimenti di retrieval |
+| `category` | `meccanica` / `storia` / `design` / `marketing` / `cultura` | metriche per categoria |
 
-Le colonne possono mancare (`answerable == "unknown"`): quelle domande finiscono
-in `skipped_no_gold` e non entrano nelle metriche.
+Domande senza `answerable` → `skipped_no_gold`, fuori dalle metriche.
+Stato: 51/51 `answerable` (28 yes / 14 no / 9 partial), 37/51 `expected_points`, 51/51 `category`.
 
 ### Layout risultati — `results_store.py`
 
 ```
 eval/results/<tool>/<config-slug>__<hash8>/<timestamp>Z/
-    run.json          describe() dell'adapter + n_documenti, n_domande, ingest_seconds, ...
-    answers.jsonl     per domanda: id, question, answer, contexts, raw, latency_s
+    run.json          describe() + n_documenti, n_domande, ingest_seconds
+    answers.jsonl     per domanda: answer, contexts, raw, latency_s   (gitignored: grosso)
     judgements.jsonl  per domanda: label, rationale, missing_points, context_supports
     metrics.json      aggregati
 ```
 
-`<config-slug>` = coppie `chiave=valore` della config, leggibili; `<hash8>` =
-SHA1 della config completa (due config diverse non collidono mai). Lo stesso
-(tool, config) rieseguito aggiunge un nuovo `<timestamp>` → storico nel tempo.
+`config_hash()` = SHA1[:8] della config → **stabile a prescindere dal formato
+dello slug leggibile**; usato per il working dir persistente (LightRAG, cognee).
 
 ### Fase 1 — `run_benchmark.py`
 
-`poetry run python -m eval.run_benchmark <tool> --query-mode <mode> [--limit N]`
+`poetry run python -m eval.run_benchmark <lightrag|supermemory|cognee> --query-mode <mode> [--limit N]`
 
-Costruisce l'adapter (una funzione `_build_<tool>` per tool), carica corpus e
-domande, `setup → ingest → loop query → teardown`, scrive `answers.jsonl` +
-`run.json`.
+Una funzione `_build_<tool>` per tool. `--query-mode` mappa sulla config nativa
+(LightRAG: `query_mode`; supermemory: `search_mode`; cognee: `hybrid`→`GRAPH_COMPLETION`,
+`rag_completion`→`RAG_COMPLETION`).
 
 ### Fase 2 — `judge.py`
 
 `poetry run python -m eval.judge <run_dir>`
 
-Per ogni risposta, un LLM giudice (`_vertex.acompletion` con
-`response_format=json_object`, `temp` di default) confronta la risposta con:
+Giudice LLM (`_vertex.acompletion`, `response_format=json_object`, **`temperature=0`**)
+confronta la risposta con: corpus OCR (indipendente dal tool) + `expected_points` +
+i `contexts` recuperati. Label, in quest'ordine di priorità:
 
-- il **corpus OCR** (indipendente dal tool valutato — è lo stesso testo per tutti);
-- gli `expected_points` del golden set (se presenti);
-- i `contexts` recuperati dal tool.
-
-Output per domanda:
-
-| campo | valori |
+| label | quando |
 |---|---|
-| `label` | `OK` / `PARTIAL` / `WRONG` (allucinazione) / `DECLINED` (dichiara di non sapere) |
-| `rationale` | una frase |
-| `missing_points` | punti attesi non coperti |
-| `context_supports` | `true/false` — i frammenti recuperati bastavano a rispondere? |
+| `DECLINED` | la risposta dichiara di non sapere — **anche se l'info era nel corpus** (fallimento di copertura ≠ allucinazione) |
+| `WRONG` | afferma fatti non presenti nel corpus (allucinazione vera) |
+| `PARTIAL` | fatti corretti e supportati, ma incompleti/imprecisi |
+| `OK` | corretta e con pieno riscontro (copre i punti attesi) |
 
-`context_supports` separa **retrieval** da **generazione**: distingue "non ha
-recuperato il frammento giusto" da "l'ha recuperato ma non l'ha usato". È il
-segnale principale per l'analisi delle cause.
-
-Parsing tollerante dell'output (JSON puro o primo blocco `{...}`); label non
-valida → `WRONG`.
+`context_supports` (`true/false`) separa **retrieval** da **generazione**.
 
 ### Fase 3 — `metrics.py`
 
 `poetry run python -m eval.metrics <run_dir>`
 
-| Gruppo | Metrica | Definizione |
+Helper `_tally()` calcolato sul totale **e per `category`** (`by_category`).
+
+| gruppo | metrica | definizione |
 |---|---|---|
-| Contenuto (domande `answerable` in yes/partial) | `precision` | `OK / (OK + PARTIAL + WRONG)` |
-| | `recall` | `OK / (# domande rispondibili)` — `DECLINED` conta come miss |
+| Contenuto (domande `answerable` yes/partial) | `precision` | `OK / (OK + PARTIAL + WRONG)` |
+| | `recall` | `OK / (# rispondibili)` — `DECLINED` = miss |
 | | `f1` | media armonica |
-| Sicurezza (domande `answerable == no`) | `hallucination_rate` | risposte sostanziali `/ (# non rispondibili)` |
-| | `correct_abstention_rate` | `DECLINED / (# non rispondibili)` |
-| Retrieval (tutti i giudizi) | `context_recall` | `context_supports==true / (# con il flag)` |
+| Sicurezza | `hallucination_rate` | `WRONG / (# domande giudicate)` — su qualsiasi domanda |
+| | `abstention_rate` | `DECLINED / (# domande answerable=no)` |
+| | `answered_anyway_rate` | `non-DECLINED / (# answerable=no)` — informativo (o gold troppo stretto, o over-answering) |
+| Retrieval | `context_recall` | `context_supports==true / (# con il flag)` |
 
-Più `label_distribution` e `skipped_no_gold`.
+### `review_gold.py`
 
----
-
-## 14. Asimmetrie del confronto e come le gestiamo
-
-| | LightRAG | supermemory |
-|---|---|---|
-| Embedding | `gemini-embedding-001` @ 1536d (iniettato) | `gemini-embedding-001` @ 1536d (via shim) — **allineato** |
-| Chunking | config nostra (`chunk_token_size`) | di supermemory, non esposto |
-| Estrazione grafo | `gemini-2.5-flash` (via `llm_model_func`) | `gemini-2.5-flash` (via shim) — **allineato** |
-| Generazione risposta | interna a LightRAG (prompt suo) | fatta da noi (`_rag_prompt`, prompt neutro) |
-
-→ Con supermemory misuriamo soprattutto il **retrieval**. Idea aperta (non ancora
-implementata): una modalità "retrieval-only + generazione nostra" anche per
-LightRAG (`QueryParam(only_need_context=True)`), per un confronto a generazione
-costante su tutti i tool.
+`poetry run python -m eval.review_gold <run_dir>` — elenca i disaccordi
+gold-vs-giudice (es. `answerable=no` ma il giudice dice supportato) con risposta +
+rationale, per correggere le annotazioni.
 
 ---
 
-## 15. Stato attuale
+## 15. Asimmetrie del confronto
+
+| | LightRAG | cognee | supermemory |
+|---|---|---|---|
+| Tipo | libreria Python | libreria Python | binario self-hosted (via shim) |
+| Embedder | `gemini-embedding-001` @ 1536 | idem | idem (via shim) — **allineati** |
+| LLM estrazione | `gemini-2.5-flash` | idem | idem (via shim) — **allineati** |
+| Chunking | config nostra (`chunk_token_size`) | di cognee, non esposto | di supermemory, non esposto |
+| Vector / graph store | nano-vectordb / GraphML | LanceDB / ladybug | pgvector / rivet |
+| Generazione risposta | **interna** (prompt suo, "comprehensive") | **interna** (prompt suo, "be brief") | **fatta da noi** (`_rag_prompt`, neutro) |
+| Prompt di estrazione | tipi per misure/procedure | grafo "stile Wikipedia" + date | lista da assistente conversazionale |
+
+→ Variabili non controllate residue: **chunking** e la **logica interna** di
+costruzione grafo / retrieval / prompt di generazione — che è esattamente ciò che
+il confronto vuole isolare.
+
+**Prompt di estrazione e generazione a confronto** (estratti reali):
+- LightRAG estrazione: entity types con `Data: ...measurements` e `Method: Procedures`;
+  merge = "integrate ALL key information, do NOT omit any detail".
+- cognee estrazione: "knowledge graph, nodes akin to Wikipedia nodes"; sezione
+  numeri = **solo date**. Generazione (`answer_simple_question.txt`): tutto il
+  prompt è *"Answer the question using the provided context. Be as brief as possible."*
+- supermemory estrazione: agente a tool, *"Extract every atomic fact... more
+  memories is better than fewer"*, esempi tutti *"user preferences / user facts /
+  events with dates"* → conversazionale, niente categoria per specifiche tecniche.
+- LightRAG generazione (`rag_response`): *"comprehensive, well-structured... ALL
+  pieces of information... Multiple Paragraphs"*.
+
+È da qui che nasce il divario OK 25 / 20 / 9 e PARTIAL 11 / 15 / 17.
+
+---
+
+## 16. Stato attuale (2026-09-09)
 
 | Pezzo | Stato |
 |---|---|
-| OCR | ✅ fatto, 4 `.txt` prodotti |
+| OCR | ✅ 4 `.txt` |
 | Interfaccia comune + `_vertex` + `_rag_prompt` | ✅ |
-| Adapter LightRAG | ✅ smoke-tested end-to-end (a 3072d; da rifare a 1536d) |
-| Adapter supermemory | ✅ scritto, `describe()` ok, **non smoke-tested** |
-| Shim OpenAI→Vertex (chat + embeddings) | ✅ testato isolato |
-| Binario supermemory installato | ✅ v0.0.8 |
-| `supermemory_local.sh` fa partire il server | ⏳ ultimo errore risolto (dim 1536), da riprovare |
-| `run_benchmark` / `judge` / `metrics` | ✅ scheletro funzionante, non ancora girati su un run reale |
-| Golden set (`answerable` ecc.) | ⏳ lo compila l'utente |
-| Adapter Cognee | ❌ non iniziato |
+| Adapter LightRAG | ✅ smoke + run completo (51 domande) |
+| Adapter supermemory | ✅ smoke + run completo. Server via `supermemory_local.sh` |
+| Adapter cognee | ✅ smoke + run completo |
+| Shim OpenAI→Vertex (chat con tool-calling + embeddings) | ✅ |
+| Golden set (answerable / expected_points / category) | ✅ prima versione |
+| `run_benchmark` / `judge` / `metrics` / `review_gold` | ✅ girati su run reali |
+| **Primo confronto a 3** (hybrid) | ✅ Content F1: LightRAG 0.68 · cognee 0.54 · supermemory 0.29 |
 
 ### Prossimi passi
 
-1. Utente: compila almeno `answerable` nel CSV.
-2. Riavviare `scripts/supermemory_local.sh` (fix dim 1536), smoke-test
-   dell'adapter supermemory.
-3. Run completo (51 domande) su LightRAG + supermemory → judge → metrics.
-4. Analisi delle cause sui casi di divergenza.
-5. Adapter Cognee.
+1. Analisi delle cause consolidata (vedi il confronto dei prompt).
 
 ---
 
-## 16. Comandi rapidi
+## 17. Comandi rapidi
 
 ```bash
 poetry install
 # .env: credenziali Vertex + LLM_MODEL + EMBEDDING_MODEL + SUPERMEMORY_BASE_URL
 
-poetry run python -m preprocessing                              # OCR
+poetry run python -m preprocessing                                   # OCR
 
-./scripts/supermemory_local.sh                                  # (in un altro terminale) server supermemory
+./scripts/supermemory_local.sh                                       # (altro terminale) solo per supermemory
 
-poetry run python -m eval.run_benchmark lightrag --query-mode hybrid
+poetry run python -m eval.run_benchmark lightrag    --query-mode hybrid
+poetry run python -m eval.run_benchmark cognee      --query-mode hybrid
 poetry run python -m eval.run_benchmark supermemory --query-mode hybrid
-poetry run python -m eval.judge   eval/results/<tool>/<slug>/<ts>
-poetry run python -m eval.metrics eval/results/<tool>/<slug>/<ts>
+poetry run python -m eval.judge    eval/results/<tool>/<slug>/<ts>
+poetry run python -m eval.metrics  eval/results/<tool>/<slug>/<ts>
+poetry run python -m eval.review_gold eval/results/<tool>/<slug>/<ts>
 ```

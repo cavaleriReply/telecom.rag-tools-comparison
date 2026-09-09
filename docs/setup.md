@@ -9,7 +9,6 @@ Guida lineare. Per il "perché" dei pezzi vedi [`implementazione.md`](implementa
 - Python 3.12, [Poetry](https://python-poetry.org/) 2.x
 - Un service account GCP con accesso a **Vertex AI** (file JSON delle credenziali)
 - `curl`, `bash` (per supermemory)
-- ~1.5 GB RAM liberi durante l'ingest di supermemory
 
 ---
 
@@ -157,26 +156,30 @@ poetry run python -m eval.run_benchmark supermemory --query-mode hybrid --limit 
 
 ---
 
-## 6b. cognee
+## 7. cognee
 
 Nessun setup extra: libreria Python (in `poetry install`), usa litellm → Vertex
 direttamente (nessuno shim). L'adapter imposta da sé le env che cognee richiede
 (`LLM_PROVIDER=custom`, ecc.) prima di importare cognee.
 
 ```bash
-poetry run python -m eval.run_benchmark cognee --query-mode hybrid   # -> GRAPH_COMPLETION
-poetry run python -m eval.run_benchmark cognee --query-mode rag_completion
+poetry run python -m eval.run_benchmark cognee --query-mode hybrid           # -> GRAPH_COMPLETION
+poetry run python -m eval.run_benchmark cognee --query-mode rag_completion   # -> RAG_COMPLETION
 ```
 
 Store per hash-config in `data/olivettiV0/cognee_data/<hash>/` (gitignored),
-persistito e riusato dai run con la stessa config.
+persistito e riusato dai run con la stessa config. Al primo avvio di ogni store
+cognee fa ~50 migrazioni Alembic (lente, una tantum).
 
-## 7. Benchmark completo + valutazione
+---
+
+## 8. Benchmark completo + valutazione
 
 ```bash
 # 1. esecuzione (un comando per tool)
 poetry run python -m eval.run_benchmark lightrag    --query-mode hybrid
-poetry run python -m eval.run_benchmark supermemory --query-mode hybrid
+poetry run python -m eval.run_benchmark cognee      --query-mode hybrid
+poetry run python -m eval.run_benchmark supermemory --query-mode hybrid   # serve ./scripts/supermemory_local.sh attivo
 
 # 2. giudizio (per ogni run dir stampata sopra)
 poetry run python -m eval.judge   eval/results/<tool>/<slug>/<timestamp>
@@ -204,4 +207,7 @@ I risultati restano in `eval/results/<tool>/<config-slug>__<hash>/<timestamp>/`
 | supermemory: `400 ... containerTag Must be 100 characters or less` | Risolto: l'adapter genera un tag corto (`olivettiV0__<mode>__<hash>`). Se rieseguito con codice vecchio, aggiorna. |
 | `address already in use :6799` | Shim di un run precedente ancora vivo. Lo script ora fa `pkill` all'avvio; altrimenti: `ps aux | grep '[v]ertex_openai_shim' ` e killa il PID. |
 | LightRAG: `Vector count mismatch` | Non dovrebbe capitare (dimensione verificata in `setup()`). Se capita, la dim richiesta ≠ quella resa da Vertex. |
+| cognee: `ProviderNotDeducibleError` all'import | L'adapter imposta `LLM_PROVIDER=custom` prima di `import cognee`; capita solo importando cognee a mano senza quella env. |
+| cognee: errori SQLAlchemy su `pipeline_runs` | Non fatali (la pipeline continua). Con lo store per-hash isolato spariscono; se persistono, `rm -rf data/olivettiV0/cognee_data/<hash>`. |
+| cognee: primo run lentissimo | ~50 migrazioni Alembic sullo store fresco, una tantum per hash-config. |
 | 429 da Vertex | `adapters/_vertex.py` ritenta con backoff; se persiste, abbassa la concorrenza (`_EMBED_MAX_CONCURRENCY`, `--concurrency` nel judge). |

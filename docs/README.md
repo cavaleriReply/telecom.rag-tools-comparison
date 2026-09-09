@@ -3,9 +3,9 @@
 - [`setup.md`](setup.md) — **da zero a benchmark**: prerequisiti, install, .env, OCR,
   LightRAG, supermemory (binario + script), esecuzione, troubleshooting.
 - [`implementazione.md`](implementazione.md) — **come è costruito il progetto**:
-  pipeline, interfaccia adapter, backend modelli condiviso, adapter LightRAG e
-  supermemory, lo shim degli embedding, la questione delle dimensioni, la
-  pipeline di evaluation, stato attuale.
+  pipeline, interfaccia adapter, backend modelli condiviso, i 3 adapter (LightRAG,
+  cognee, supermemory), lo shim per supermemory, la questione delle dimensioni, la
+  pipeline di evaluation, confronto dei prompt, stato attuale.
 - [`lightrag.md`](lightrag.md) — due diligence GitHub di LightRAG.
 - [`supermemory.md`](supermemory.md) — due diligence GitHub di supermemory.
 - [`cognee.md`](cognee.md) — due diligence GitHub di cognee.
