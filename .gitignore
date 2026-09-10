@@ -2,6 +2,7 @@
 .venv/
 __pycache__/
 *.pyc
+*.lock
 
 # Artefatti generati dagli adapter (grafi, indici vettoriali, cache LLM)
 data/**/lightrag_workdir/
@@ -23,3 +24,7 @@ eval/results/**/answers.jsonl
 
 # Store di cognee (LanceDB + grafo ladybug)
 data/**/cognee_data/
+
+presentations/
+eval/results/
+data/olivettiV0/ocr/
