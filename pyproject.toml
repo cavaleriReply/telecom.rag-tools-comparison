@@ -17,6 +17,13 @@ dependencies = [
     "lightrag-hku (==1.5.7)",
     "supermemory (>=3.61.0,<4.0.0)",
     "cognee (==1.5.4)",
+    # R2R: niente SDK ufficiale ("r2r" da PyPI trascina fastapi<0.116, in
+    # conflitto con cognee che vuole fastapi>=0.116.2 — impossibile risolvere
+    # insieme). L'adapter parla REST diretto (v3) con httpx, già presente
+    # transitivamente via litellm ma reso esplicito perché lo importiamo noi.
+    # Il server R2R gira a parte, in un venv isolato (scripts/r2r_local.sh),
+    # non in questo poetry env. Vedi docs/r2r.md.
+    "httpx (>=0.28.0)",
 ]
 
 [tool.poetry]

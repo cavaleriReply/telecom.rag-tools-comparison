@@ -1,7 +1,7 @@
 # Dettagli implementativi
 
-Aggiornato **2026-09-09**. Questo documento descrive *come* è costruito il progetto.
-Due diligence dei singoli tool: [`lightrag.md`](lightrag.md), [`supermemory.md`](supermemory.md), [`cognee.md`](cognee.md).
+Aggiornato **2026-09-11**. Questo documento descrive *come* è costruito il progetto.
+Due diligence dei singoli tool: [`lightrag.md`](lightrag.md), [`supermemory.md`](supermemory.md), [`cognee.md`](cognee.md), [`r2r.md`](r2r.md).
 Guida da zero: [`setup.md`](setup.md).
 
 ---
@@ -9,8 +9,8 @@ Guida da zero: [`setup.md`](setup.md).
 ## 1. Obiettivo e vincoli
 
 Confronto oggettivo di strumenti RAG / knowledge-retrieval (**LightRAG**,
-**supermemory**, **cognee**) sulla documentazione museale Olivetti. Interessa
-**il perché** delle differenze di performance, non solo un ranking per F1.
+**supermemory**, **cognee**, **R2R**) sulla documentazione museale Olivetti.
+Interessa **il perché** delle differenze di performance, non solo un ranking per F1.
 
 Vincoli che hanno guidato il design:
 
@@ -36,6 +36,7 @@ data/olivettiV0/
   lightrag_workdir/<hash>/   artefatti LightRAG per config (gitignored)
   supermemory_data/         store del server supermemory self-hosted (gitignored)
   cognee_data/<hash>/        store cognee: LanceDB + grafo ladybug (gitignored)
+                             (R2R non ha una cartella qui: lo store è Postgres, fuori dal repo)
 
 preprocessing/           OCR: PDF -> testo
 adapters/
@@ -45,6 +46,9 @@ adapters/
   lightrag_adapter.py    adapter LightRAG   (libreria, litellm iniettato)
   supermemory_adapter.py adapter supermemory (binario, via shim)
   cognee_adapter.py      adapter cognee     (libreria, litellm nativo)
+  r2r_adapter.py         adapter R2R        (server REST, httpx diretto, litellm nativo lato server)
+  r2r_config/
+    r2r_olivetti.toml    overlay di config per il server R2R (LLM/embedding -> Vertex)
 eval/
   dataset.py             caricamento domande + golden set
   run_benchmark.py       fase 1: esegue le domande su un tool -> answers.jsonl
@@ -57,8 +61,11 @@ eval/
 scripts/
   vertex_openai_shim.py  shim OpenAI-compatible (chat + embeddings) verso Vertex, per supermemory
   supermemory_local.sh   avvia shim + supermemory-server self-hosted
+  r2r_local.sh            wrapper su `docker compose -f docker-compose.r2r.yml up`
 
-docs/                    setup.md, implementazione.md, lightrag.md, supermemory.md, cognee.md
+docker-compose.r2r.yml   Postgres+pgvector + server R2R (immagine ufficiale), tutto in Docker
+
+docs/                    setup.md, implementazione.md, lightrag.md, supermemory.md, cognee.md, r2r.md
 ```
 
 ---
@@ -68,6 +75,7 @@ docs/                    setup.md, implementazione.md, lightrag.md, supermemory.
 ```
 PDF ─(preprocessing)─► ocr/*.txt ─┬─► LightRAGAdapter ────┐   (genera la risposta)
                                   ├─► CogneeAdapter ──────┤   (genera la risposta)
+                                  ├─► R2RAdapter ─────────┤   (genera la risposta, con citazioni)
                                   └─► SupermemoryAdapter ─┤   (recupera; genera _rag_prompt)
                                                           ▼
 competency_questions.csv ──► run_benchmark ──► answers.jsonl
@@ -149,7 +157,7 @@ Dettagli:
   `gemini-embedding-001` accetta una sola istanza per richiesta.
 - **`tool_calls`**: `acompletion_message` normalizza le function-call di Gemini
   in forma OpenAI — serve allo shim (supermemory estrae le memorie con un agente).
-- **`dimensions`** → `output_dimensionality`. Progetto = **1536** (vedi §12).
+- **`dimensions`** → `output_dimensionality`. Progetto = **1536** (vedi §13).
 - **Normalizzazione L2**: `gemini-embedding-001` è unitario solo a 3072; sotto no
   → `aembed` normalizza sempre.
 
@@ -157,8 +165,8 @@ Dettagli:
 
 ## 7. Generazione per i tool retrieval-only — `adapters/_rag_prompt.py`
 
-Solo **supermemory** recupera passaggi senza generare (LightRAG e cognee generano
-da sé). `answer_from_contexts(question, contexts)`:
+Solo **supermemory** recupera passaggi senza generare (LightRAG, cognee e R2R
+generano da sé). `answer_from_contexts(question, contexts)`:
 
 - prompt minimale e neutro: *"rispondi solo con quello che c'è nel contesto,
   altrimenti dichiara di non sapere"*. Niente prompt engineering: quello che
@@ -266,7 +274,7 @@ generativa. Binario self-hosted (`supermemory-server` lite, TypeScript/bun).
 
 | Ruolo | Chi | Modello |
 |---|---|---|
-| **Embedder** (ingest + query) | server supermemory | `gemini-embedding-001` @ 1536d, via shim (§11) |
+| **Embedder** (ingest + query) | server supermemory | `gemini-embedding-001` @ 1536d, via shim (§12) |
 | **Estrazione** ("dreaming": memorie → grafo temporale) | server supermemory | `gemini-2.5-flash`, via shim |
 | **Generazione** risposta | **il nostro adapter** (`_rag_prompt`) | `gemini-2.5-flash` |
 
@@ -299,7 +307,87 @@ container → ogni run ri-ingesta da zero.
 
 ---
 
-## 11. Lo shim OpenAI→Vertex — `scripts/vertex_openai_shim.py`
+## 11. Adapter R2R — `adapters/r2r_adapter.py`
+
+R2R è l'unico dei quattro che non è né libreria Python né binario con SDK: è un
+**server** (FastAPI) appoggiato a **Postgres+pgvector obbligatorio**, parlato via
+REST v3. Va avviato a parte, tutto in Docker via
+[`docker-compose.r2r.yml`](../docker-compose.r2r.yml) (`scripts/r2r_local.sh`
+è il wrapper) — vedi `docs/r2r.md` e `docs/setup.md` §8.
+
+### Niente SDK ufficiale
+
+Il pacchetto `r2r` da PyPI trascina `fastapi<0.116` **incondizionatamente**
+(non solo nell'extra `[core]` del server), in conflitto con `cognee` che vuole
+`fastapi>=0.116.2` → `poetry lock` fallisce se coesistono nello stesso ambiente.
+L'adapter parla REST diretto con `httpx` (già una dipendenza transitiva di
+litellm, resa esplicita in `pyproject.toml`): i payload/endpoint ricalcano
+esattamente quelli dell'SDK ufficiale (letto dai sorgenti per ricavarli).
+
+### Come è usato as-is
+
+R2R usa **litellm nativamente** per LLM ed embedding — `provider = "litellm"`
+nel toml, e il completion provider di default (`"r2r"`) fa da router per
+prefisso del nome modello: tutto ciò che non è `openai/ | azure/ | deepseek/ |
+ollama/ | lmstudio/ | anthropic/ | azure-foundry/` (o senza prefisso) ricade nel
+fallback litellm → `vertex_ai/...` ci arriva senza shim, come cognee. La
+config è server-side (`adapters/r2r_config/r2r_olivetti.toml`, deep-merge sopra
+i default di R2R): `quality_llm`/`fast_llm` e `embedding.base_model` puntati su
+Vertex, `base_dimension=1536`.
+
+### `R2RConfig`
+
+`search_mode` (`advanced` default = ricerca ibrida + grafo, analogo di LightRAG
+`hybrid`/cognee `GRAPH_COMPLETION`; `basic` = solo semantica), `limit` (top_k).
+Nostro concetto, **mai** i preset `basic`/`advanced` di R2R lato richiesta:
+`search_settings()` li traduce in `search_settings` espliciti — vedi i bug sotto.
+
+### Ciclo di vita
+
+- `setup()` — apre il client `httpx`, verifica `GET /v3/health` (errore chiaro
+  se il server non è su, invece dello stacktrace httpx grezzo).
+- `ingest(documents)` — `POST /documents` (`raw_text` + `metadata={"doc_id":...}`)
+  per i documenti non ancora presenti (dedup guardando `GET /documents`, non
+  c'è un working dir locale da controllare). Poi:
+  1. poll su `ingestion_status` (parsing/chunking/embedding) fino a successo;
+  2. se `search_mode="advanced"`: `POST /documents/{id}/extract` esplicito per
+     ogni documento non ancora estratto, poi `POST /graphs/{collection_id}/pull`
+     — entrambi necessari, vedi i bug sotto (`_ensure_graph_extracted`).
+- `query(question)` — `POST /retrieval/rag` con `search_mode="custom"` (mai
+  `"advanced"`, vedi bug #3): risposta generata (`generated_answer`, con
+  citazioni strutturate) + `search_results` (chunk grezzi + entità/relazioni
+  del grafo, appiattiti in `contexts`).
+- `teardown()` — chiude il client `httpx`.
+
+### Bug trovati in R2R (server 3.6.6, deployment "light") e aggirati qui
+
+Scoperti lanciando il server per la prima volta (2026-09-11); dettagli e
+tracce complete in `docs/r2r.md`:
+
+1. `R2R_PROJECT_NAME` con maiuscole rompe lo schema Postgres (case-folding
+   incoerente tra due punti del codice di R2R) → tenuto minuscolo nel compose.
+2. `automatic_extraction` **non funziona** con l'orchestrazione `simple`
+   (deployment "light"): l'adapter chiama `documents/{id}/extract` a mano, e
+   anche così le entità restano senza embedding finché non si chiama anche
+   `graphs/{collection_id}/pull` — altrimenti `graph_search` non trova nulla.
+3. Il preset `search_mode="advanced"` di R2R porta `search_strategy="hyde"`,
+   che manda a Gemini/Vertex un messaggio col solo ruolo "system" (nessun
+   "user") → Vertex rifiuta la richiesta (`contents` vuoto) e **la ricerca
+   stessa fallisce**, non solo la generazione. L'adapter non usa mai i preset
+   di R2R, solo `search_mode="custom"` con `search_settings` espliciti.
+
+✅ **Smoke-testato end-to-end** (2026-09-11, `--limit 3`, dopo i fix sopra):
+risposte corrette e ben citate (es. "3,7 kg, 85×302×324 mm" per la Lettera 22,
+identico al golden set). Non ancora eseguito il run completo a 51 domande.
+Osservazione da verificare su run completo: le descrizioni delle entità del
+grafo escono **in inglese** anche su corpus italiano (come supermemory — vedi
+§16). La sintesi per comunità (community-level GraphRAG) resta fuori scope:
+solo entità/relazioni "pullate" per-documento, non le comunità
+(`collections.extract` + build communities, passo manuale extra non fatto).
+
+---
+
+## 12. Lo shim OpenAI→Vertex — `scripts/vertex_openai_shim.py`
 
 ### Perché esiste
 
@@ -308,8 +396,9 @@ container → ogni run ri-ingesta da zero.
 supporta Vertex**, e non abbiamo una `GEMINI_API_KEY` di AI Studio. Come provider
 di embedding: solo `local | openai | gemini`.
 
-(cognee e LightRAG **non** hanno bisogno dello shim: sono librerie Python che
-usano litellm direttamente.)
+(cognee, LightRAG e R2R **non** hanno bisogno dello shim: cognee e LightRAG sono
+librerie Python che usano litellm direttamente; R2R è un server ma supporta
+litellm nativamente lato config — vedi §11.)
 
 ### Cos'è
 
@@ -335,7 +424,7 @@ Config passata da `supermemory_local.sh`: `OPENAI_API_KEY=sk-shim-not-used`,
 
 ---
 
-## 12. La questione delle dimensioni degli embedding
+## 13. La questione delle dimensioni degli embedding
 
 `gemini-embedding-001` ha dimensione **nativa 3072** (L2-normalizzata solo lì).
 **Il progetto usa 1536 ovunque**: il vector store di supermemory (pgvector + HNSW)
@@ -349,14 +438,15 @@ taglia Matryoshka di prima classe. LightRAG e cognee usano la stessa taglia per
 | supermemory ↔ shim | supermemory non manda `dimensions` → 3072 → non entra in `vector(1536)` → chunk non indicizzati (silenzioso) | shim `--embedding-dimensions 1536` di default, `raise` se non combacia |
 | supermemory ↔ pgvector | dim > 2000 → server non parte; store bloccato sulla prima dim | `SUPERMEMORY_EMBEDDING_DIMENSIONS=1536` + cartella dati vuota |
 | cognee ↔ LanceDB | LanceDB non ha limiti di dim | `EMBEDDING_DIMENSIONS=1536` per parità, non per necessità |
-| confronto tra i 3 | embedder diversi → spazi non confrontabili | stesso modello, stessa dim, stesso codice `_vertex.aembed`, stessa normalizzazione |
+| R2R ↔ pgvector | stesso vincolo di supermemory: `base_dimension` fissa la colonna al primo ingest | `base_dimension=1536` in `r2r_olivetti.toml`, impostato prima di ogni primo ingest |
+| confronto tra i 4 | embedder diversi → spazi non confrontabili | stesso modello, stessa dim, stesso codice `_vertex.aembed` (o il suo equivalente litellm lato server per R2R), stessa normalizzazione |
 
 **Accortezze:** mai lanciare `supermemory-server` da solo (userebbe `bge-base-en-v1.5`
 768d); se si cambia dimensione, svuotare prima gli store.
 
 ---
 
-## 13. Setup supermemory self-hosted — `scripts/supermemory_local.sh`
+## 14. Setup supermemory self-hosted — `scripts/supermemory_local.sh`
 
 1. carica le credenziali Vertex dal `.env`;
 2. `pkill` di shim rimasti, avvia lo shim (`:6799`), ne attende l'health;
@@ -369,7 +459,7 @@ binario** — non cancellarla. Nel `.env`: `SUPERMEMORY_BASE_URL="http://localho
 
 ---
 
-## 14. Evaluation — `eval/`
+## 15. Evaluation — `eval/`
 
 ### Golden set — `dataset.py`
 
@@ -447,17 +537,17 @@ rationale, per correggere le annotazioni.
 
 ---
 
-## 15. Asimmetrie del confronto
+## 16. Asimmetrie del confronto
 
-| | LightRAG | cognee | supermemory |
-|---|---|---|---|
-| Tipo | libreria Python | libreria Python | binario self-hosted (via shim) |
-| Embedder | `gemini-embedding-001` @ 1536 | idem | idem (via shim) — **allineati** |
-| LLM estrazione | `gemini-2.5-flash` | idem | idem (via shim) — **allineati** |
-| Chunking | config nostra (`chunk_token_size`) | di cognee, non esposto | di supermemory, non esposto |
-| Vector / graph store | nano-vectordb / GraphML | LanceDB / ladybug | pgvector / rivet |
-| Generazione risposta | **interna** (prompt suo, "comprehensive") | **interna** (prompt suo, "be brief") | **fatta da noi** (`_rag_prompt`, neutro) |
-| Prompt di estrazione | tipi per misure/procedure | grafo "stile Wikipedia" + date | lista da assistente conversazionale |
+| | LightRAG | cognee | supermemory | R2R |
+|---|---|---|---|---|
+| Tipo | libreria Python | libreria Python | binario self-hosted (via shim) | server self-hosted (Postgres, REST) |
+| Embedder | `gemini-embedding-001` @ 1536 | idem | idem (via shim) — **allineati** | idem (litellm nativo) — **allineati** |
+| LLM estrazione | `gemini-2.5-flash` | idem | idem (via shim) — **allineati** | idem (litellm nativo) — **allineati** |
+| Chunking | config nostra (`chunk_token_size`) | di cognee, non esposto | di supermemory, non esposto | di R2R, non esposto (`ingestion.chunk_size` di default, non toccato) |
+| Vector / graph store | nano-vectordb / GraphML | LanceDB / ladybug | pgvector / rivet | Postgres + pgvector (obbligatorio, unico store non intercambiabile) |
+| Generazione risposta | **interna** (prompt suo, "comprehensive") | **interna** (prompt suo, "be brief") | **fatta da noi** (`_rag_prompt`, neutro) | **interna** (prompt suo, neutro + citazioni obbligatorie) |
+| Prompt di estrazione | tipi per misure/procedure | grafo "stile Wikipedia" + date | lista da assistente conversazionale | grafo con XML tags, entità pesate 0-10, "ogni entità deve avere almeno una relazione" |
 
 → Variabili non controllate residue: **chunking** e la **logica interna** di
 costruzione grafo / retrieval / prompt di generazione — che è esattamente ciò che
@@ -474,12 +564,27 @@ il confronto vuole isolare.
   events with dates"* → conversazionale, niente categoria per specifiche tecniche.
 - LightRAG generazione (`rag_response`): *"comprehensive, well-structured... ALL
   pieces of information... Multiple Paragraphs"*.
+- R2R estrazione (`graph_extraction.yaml`): output in tag XML, richiede un
+  `relationship_weight` 0-10 e impone *"each entity must have at least one
+  relationship... create intermediate entities if needed"* — spinge verso un
+  grafo denso per costruzione, non per esaustività dei dettagli come LightRAG.
+  Generazione (`rag.yaml`): *"Answer the query given ... Use line item
+  references like [c910e2e] to refer to provided search results"* — minimale e
+  neutro nello stile (vicino a `_rag_prompt`), ma orientato alla citazione
+  verificabile più che LightRAG/cognee.
 
-È da qui che nasce il divario OK 25 / 20 / 9 e PARTIAL 11 / 15 / 17.
+È da qui che nasce il divario OK 25 / 20 / 9 (LightRAG / cognee / supermemory).
+**Confermato dal run completo di R2R** (51 domande, 2026-09-11, vedi §17): 24
+OK, secondo per F1 dietro LightRAG — la regola di copertura strutturale
+("ogni entità deve avere una relazione") produce un grafo denso ma, a
+differenza del bucket misure/procedure di LightRAG, non spinge verso il
+dettaglio quantitativo; il prompt di generazione minimale e orientato alle
+citazioni resta comunque efficace quanto quello di LightRAG sulla sicurezza
+(0% allucinazioni per entrambi).
 
 ---
 
-## 16. Stato attuale (2026-09-09)
+## 17. Stato attuale (2026-09-11)
 
 | Pezzo | Stato |
 |---|---|
@@ -488,30 +593,57 @@ il confronto vuole isolare.
 | Adapter LightRAG | ✅ smoke + run completo (51 domande) |
 | Adapter supermemory | ✅ smoke + run completo. Server via `supermemory_local.sh` |
 | Adapter cognee | ✅ smoke + run completo |
+| Adapter R2R | ✅ smoke + run completo (51 domande). REST diretto, no SDK (vedi §11). 3 bug di R2R trovati e aggirati |
 | Shim OpenAI→Vertex (chat con tool-calling + embeddings) | ✅ |
 | Golden set (answerable / expected_points / category) | ✅ prima versione |
 | `run_benchmark` / `judge` / `metrics` / `review_gold` | ✅ girati su run reali |
-| **Primo confronto a 3** (hybrid) | ✅ Content F1: LightRAG 0.68 · cognee 0.54 · supermemory 0.29 |
+| **Confronto a 4** (hybrid) | ✅ Content F1: LightRAG 0.676 · R2R 0.649 · cognee 0.541 · supermemory 0.286 |
+
+Dettaglio del confronto a 4 (51 domande, 37 rispondibili):
+
+| | LightRAG | R2R | cognee | supermemory |
+|---|---|---|---|---|
+| Content F1 | **0.676** | 0.649 | 0.541 | 0.286 |
+| OK / PARTIAL / WRONG (su 37) | 25 / 11 / 1 | 24 / 13 / 0 | 20 / 15 / 2 | 9 / 17 / 0 (+11 DECLINED) |
+| hallucination_rate | 0.020 | **0.0** | 0.059 | **0.0** |
+| abstention su `no` (14) | 35.7% | 35.7% | 42.9% | 85.7% |
+| context_recall | 0.980 | 0.961 | 0.961 | 0.804 |
+| ingest (1ª volta) | 442s | 298s | 265s | 228s |
+| latenza mediana | 8.9s | 7.1s | 5.3s | 3.4s |
+| contesti/domanda (media) | 221 | 56 | 6 | 20 |
+
+R2R secondo per F1, appaiato a LightRAG su zero allucinazioni, retrieval quasi
+alla pari con cognee (96.1% recall). Nessuna categoria in cui sia nettamente
+il peggiore. Report visivo completo (grafici, confronto prompt, i 3 bug di
+R2R): artifact ["Olivetti RAG Bench"](https://claude.ai/code/artifact/4e59a447-6799-4dcd-b2bf-639ff460f940).
 
 ### Prossimi passi
 
-1. Analisi delle cause consolidata (vedi il confronto dei prompt).
+1. Run di parità sul top_k / modalità "RAG classico" per tutti e quattro
+   (LightRAG `naive`, cognee `rag_completion`, supermemory `documents`, R2R
+   `basic`) — isolare quanto del divario è retrieval vs generazione.
+2. Rivedere le ~6 annotazioni golden `answerable=no` ancora in disaccordo col giudice.
+3. Eventuale invocazione della community-level GraphRAG di R2R (`collections.extract`
+   + build communities, non fatta finora) per un confronto più fedele al
+   "graph mode" di LightRAG/cognee.
 
 ---
 
-## 17. Comandi rapidi
+## 18. Comandi rapidi
 
 ```bash
 poetry install
-# .env: credenziali Vertex + LLM_MODEL + EMBEDDING_MODEL + SUPERMEMORY_BASE_URL
+# .env: credenziali Vertex + LLM_MODEL + EMBEDDING_MODEL + SUPERMEMORY_BASE_URL + R2R_BASE_URL
 
 poetry run python -m preprocessing                                   # OCR
 
 ./scripts/supermemory_local.sh                                       # (altro terminale) solo per supermemory
+./scripts/r2r_local.sh                                                # (altro terminale) solo per R2R — serve Docker
 
 poetry run python -m eval.run_benchmark lightrag    --query-mode hybrid
 poetry run python -m eval.run_benchmark cognee      --query-mode hybrid
 poetry run python -m eval.run_benchmark supermemory --query-mode hybrid
+poetry run python -m eval.run_benchmark r2r         --query-mode hybrid
 poetry run python -m eval.judge    eval/results/<tool>/<slug>/<ts>
 poetry run python -m eval.metrics  eval/results/<tool>/<slug>/<ts>
 poetry run python -m eval.review_gold eval/results/<tool>/<slug>/<ts>

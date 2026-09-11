@@ -1,0 +1,43 @@
+# Overlay di config per il server R2R, usato SOLO in questo progetto.
+#
+# R2R carica il suo r2r.toml di default e fa un deep-merge di questo file sopra
+# (core/main/config.py: load_default_config() + deep_update(default, config_data)):
+# qui mettiamo SOLO ciò che cambiamo, non l'intera config. Puntato dal server via
+# `R2R_CONFIG_PATH=adapters/r2r_config/r2r_olivetti.toml` (lo fa scripts/r2r_local.sh).
+#
+# Le credenziali Vertex (GOOGLE_APPLICATION_CREDENTIALS / VERTEXAI_PROJECT /
+# VERTEXAI_LOCATION) NON stanno qui: le legge litellm dall'ambiente del processo
+# server, esportate dallo script da .env — stesso schema di LightRAG/cognee.
+
+[app]
+# LLM per la generazione RAG (quality_llm) e per le operazioni interne del
+# server, es. nomi conversazione (fast_llm) - stesso modello degli altri tool,
+# non ci interessa differenziare qui.
+quality_llm = "vertex_ai/gemini-2.5-flash"
+fast_llm = "vertex_ai/gemini-2.5-flash"
+
+[embedding]
+# provider "litellm" = litellm.aembedding diretto, nessuno shim (R2R lo supporta
+# nativamente, a differenza di supermemory). Vedi core/providers/embeddings/litellm.py.
+provider = "litellm"
+base_model = "vertex_ai/gemini-embedding-001"
+# 1536 come ovunque nel progetto (vedi implementazione.md §12): deve restare
+# fissato PRIMA del primo ingest, la colonna pgvector si crea a questa dimensione.
+base_dimension = 1536
+# gemini-embedding-001 accetta una sola istanza per richiesta (come in
+# adapters/_vertex.py): batch alto non aiuta, meglio non saturare Vertex.
+batch_size = 8
+concurrent_request_limit = 8
+
+[completion_embedding]
+# Di norma identico a [embedding] (usato per il retrieval interno del completion
+# provider, es. contextual enrichment): stesso modello, stessa dim, per parità.
+provider = "litellm"
+base_model = "vertex_ai/gemini-embedding-001"
+base_dimension = 1536
+
+[auth]
+# Già il default di r2r.toml: nessun login, un solo utente implicito. Esplicito
+# qui solo per chiarezza - non serve gestire utenti/collezioni per un confronto
+# a singolo corpus come questo.
+require_authentication = false

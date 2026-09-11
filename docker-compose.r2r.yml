@@ -1,0 +1,81 @@
+# Ambiente R2R per questo progetto: Postgres+pgvector (obbligatorio per R2R) +
+# il server R2R stesso (immagine ufficiale), entrambi in Docker — niente venv
+# Python a parte, niente pip install.
+#
+# Le credenziali Vertex (GOOGLE_APPLICATION_CREDENTIALS, VERTEXAI_PROJECT,
+# VERTEXAI_LOCATION) NON stanno in questo file: `docker compose` carica in
+# automatico il `.env` nella directory da cui viene lanciato (la root del
+# progetto) per l'interpolazione ${VAR} qui sotto — stessa fonte di verità di
+# adapters/_vertex.py, niente da duplicare. Lancia sempre i comandi dalla root
+# del progetto (dove sta anche il `.env`).
+#
+# Uso (vedi anche docs/setup.md §8 e docs/r2r.md):
+#   docker compose -f docker-compose.r2r.yml up          # foreground, Ctrl-C ferma (dati persistono)
+#   docker compose -f docker-compose.r2r.yml up -d        # in background
+#   docker compose -f docker-compose.r2r.yml down         # ferma, TIENE i dati (volume)
+#   docker compose -f docker-compose.r2r.yml down -v      # ferma e CANCELLA i dati (reset totale)
+#   docker compose -f docker-compose.r2r.yml logs -f r2r  # log del server, se lanciato con -d
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: r2r
+      POSTGRES_PASSWORD: r2r
+      POSTGRES_DB: r2r
+    volumes:
+      - r2r_pgdata:/var/lib/postgresql/data
+    ports:
+      # Comoda per ispezionare con psql dall'host; R2R ci arriva comunque via
+      # rete Docker interna (host "postgres"), non serve a lui.
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U r2r"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  r2r:
+    # Pinnata (come lightrag-hku/cognee in pyproject.toml): l'API di R2R cambia,
+    # non vogliamo un adapter scritto contro una versione e girato su un'altra.
+    image: sciphiai/r2r:3.6.6
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "7272:7272"
+    environment:
+      # Il Dockerfile di R2R espone di default la 8000 (ARG R2R_PORT=8000): senza
+      # questa var l'app dentro il container ascolta lì, il mapping "7272:7272"
+      # punta a una porta vuota e ogni richiesta si chiude a vuoto (TCP accettato,
+      # zero byte di risposta) — osservato al primo avvio (2026-09-11).
+      R2R_PORT: "7272"
+      R2R_CONFIG_PATH: /app/user_configs/r2r_olivetti.toml
+      # minuscolo: R2R crea lo schema Postgres quotato (case preservato, es.
+      # "olivettiV0") ma poi referenzia lo schema NON quotato in almeno un punto
+      # (trigger della tabella prompts, core/providers/database/prompts_handler.py)
+      # -> Postgres lo minuscolizza -> "schema does not exist". Bug di R2R con
+      # project name non tutto minuscolo, aggirato tenendolo minuscolo qui.
+      R2R_PROJECT_NAME: olivettiv0
+      R2R_POSTGRES_USER: r2r
+      R2R_POSTGRES_PASSWORD: r2r
+      R2R_POSTGRES_HOST: postgres
+      R2R_POSTGRES_PORT: "5432"
+      R2R_POSTGRES_DBNAME: r2r
+      # Stesse variabili di adapters/_vertex.py, lette dal .env del progetto.
+      VERTEXAI_PROJECT: ${VERTEXAI_PROJECT:?manca VERTEXAI_PROJECT nel .env}
+      VERTEXAI_LOCATION: ${VERTEXAI_LOCATION:?manca VERTEXAI_LOCATION nel .env}
+      # Il file delle credenziali è montato sotto, il path nel container è fisso.
+      GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
+    volumes:
+      - ./adapters/r2r_config/r2r_olivetti.toml:/app/user_configs/r2r_olivetti.toml:ro
+      - ${GOOGLE_APPLICATION_CREDENTIALS:?manca GOOGLE_APPLICATION_CREDENTIALS nel .env}:/app/gcp-credentials.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7272/v3/health"]
+      interval: 6s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  r2r_pgdata:
+    name: olivetti_r2r_pgdata

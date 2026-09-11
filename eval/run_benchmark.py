@@ -73,10 +73,23 @@ def _build_cognee(args: argparse.Namespace) -> RAGAdapter:
     return CogneeAdapter(data_dir=data_dir, config=config)
 
 
+def _build_r2r(args: argparse.Namespace) -> RAGAdapter:
+    from adapters.r2r_adapter import R2RAdapter, R2RConfig
+
+    # --query-mode mappa su search_mode: "hybrid" -> "advanced" (ibrido + grafo),
+    # qualsiasi altro valore -> "basic" (solo ricerca semantica, niente grafo).
+    search_mode = "advanced" if args.query_mode == "hybrid" else "basic"
+    config = R2RConfig(search_mode=search_mode)
+    # Server a parte (scripts/r2r_local.sh): nessun working dir da gestire qui,
+    # l'adapter deduplica l'ingest guardando i documenti già sul server.
+    return R2RAdapter(base_url=os.environ.get("R2R_BASE_URL", "http://localhost:7272"), config=config)
+
+
 _ADAPTER_BUILDERS = {
     "lightrag": _build_lightrag,
     "supermemory": _build_supermemory,
     "cognee": _build_cognee,
+    "r2r": _build_r2r,
 }
 
 

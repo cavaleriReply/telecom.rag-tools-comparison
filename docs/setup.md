@@ -40,6 +40,7 @@ LLM_MODEL="vertex_ai/gemini-2.5-flash"
 EMBEDDING_MODEL="vertex_ai/gemini-embedding-001"
 
 SUPERMEMORY_BASE_URL="http://localhost:6767"   # solo se usi supermemory
+R2R_BASE_URL="http://localhost:7272"           # solo se usi R2R
 ```
 
 Verifica l'accesso a Vertex:
@@ -173,13 +174,79 @@ cognee fa ~50 migrazioni Alembic (lente, una tantum).
 
 ---
 
-## 8. Benchmark completo + valutazione
+## 8. R2R (self-hosted, Docker Compose)
+
+A differenza degli altri tre, R2R è un **server** appoggiato a Postgres+pgvector
+(obbligatorio): non basta `poetry install`. Tutto l'ambiente (Postgres + server
+R2R, immagine ufficiale) è in [`docker-compose.r2r.yml`](../docker-compose.r2r.yml)
+— niente pip/venv a parte. Vedi [`docs/r2r.md`](r2r.md) per il perché delle scelte.
+
+### 8a. Prerequisiti (una volta)
+
+- **Docker** in esecuzione (Docker Compose v2, cioè il comando `docker compose`
+  senza trattino — incluso in Docker Desktop e nelle install recenti di Docker Engine).
+- `.env` compilato con `VERTEXAI_PROJECT` / `VERTEXAI_LOCATION` /
+  `GOOGLE_APPLICATION_CREDENTIALS` (§2) — `docker compose` li legge da lì.
+
+### 8b. Avvia (ogni sessione)
+
+In un **terminale dedicato** (resta occupato):
+
+```bash
+./scripts/r2r_local.sh
+```
+
+È un wrapper sottile su `docker compose -f docker-compose.r2r.yml up`: tutta
+la configurazione vive nel compose file. Avvia:
+- **Postgres+pgvector** (volume Docker `olivetti_r2r_pgdata`, persistente tra
+  un run e l'altro, come il working dir di LightRAG — anche porta `:5433` sull'host,
+  comoda per ispezionare con `psql` se ti serve, R2R ci arriva comunque via rete Docker interna)
+- **server R2R** (immagine ufficiale `sciphiai/r2r:3.6.6`, pinnata) su `:7272`,
+  puntato su Vertex via litellm nativo (`adapters/r2r_config/r2r_olivetti.toml`,
+  montato in sola lettura nel container: `vertex_ai/gemini-2.5-flash` +
+  `vertex_ai/gemini-embedding-001` @ 1536d) — **nessuno shim**, a differenza di supermemory.
+  Le credenziali Vertex (JSON del service account) sono montate anch'esse in
+  sola lettura, non copiate nell'immagine.
+
+Ctrl-C ferma i container ma **non** cancella il volume Postgres: i dati restano.
+Per girare in background: `docker compose -f docker-compose.r2r.yml up -d`
+(poi `docker compose -f docker-compose.r2r.yml logs -f r2r` per i log).
+
+### 8c. Reset dello store
+
+Se cambi `base_dimension` nel toml, o l'ingest si è sporcato:
+
+```bash
+docker compose -f docker-compose.r2r.yml down -v   # ferma E cancella il volume
+```
+
+Al prossimo `./scripts/r2r_local.sh` riparte da un Postgres vuoto (nuove
+migrazioni al primo avvio, qualche secondo).
+
+### 8d. Esegui
+
+```bash
+poetry run python -m eval.run_benchmark r2r --query-mode hybrid --limit 3
+```
+
+✅ Smoke-testato end-to-end (2026-09-11): con `search_mode` ibrido+grafo,
+l'ingest fa anche estrazione entità/relazioni e "pull" nel grafo della
+collezione (§8b, dettagli in `docs/r2r.md`) — la primissima volta su un
+corpus può richiedere qualche minuto in più delle volte successive (chiamate
+LLM per l'estrazione, come l'ingest degli altri tool). La prima chiamata a
+`/v3/health` dopo `up` può metterci qualche secondo (migrazioni Postgres del
+server al primo avvio).
+
+---
+
+## 9. Benchmark completo + valutazione
 
 ```bash
 # 1. esecuzione (un comando per tool)
 poetry run python -m eval.run_benchmark lightrag    --query-mode hybrid
 poetry run python -m eval.run_benchmark cognee      --query-mode hybrid
 poetry run python -m eval.run_benchmark supermemory --query-mode hybrid   # serve ./scripts/supermemory_local.sh attivo
+poetry run python -m eval.run_benchmark r2r         --query-mode hybrid   # serve ./scripts/r2r_local.sh attivo
 
 # 2. giudizio (per ogni run dir stampata sopra)
 poetry run python -m eval.judge   eval/results/<tool>/<slug>/<timestamp>
@@ -211,3 +278,10 @@ I risultati restano in `eval/results/<tool>/<config-slug>__<hash>/<timestamp>/`
 | cognee: errori SQLAlchemy su `pipeline_runs` | Non fatali (la pipeline continua). Con lo store per-hash isolato spariscono; se persistono, `rm -rf data/olivettiV0/cognee_data/<hash>`. |
 | cognee: primo run lentissimo | ~50 migrazioni Alembic sullo store fresco, una tantum per hash-config. |
 | 429 da Vertex | `adapters/_vertex.py` ritenta con backoff; se persiste, abbassa la concorrenza (`_EMBED_MAX_CONCURRENCY`, `--concurrency` nel judge). |
+| R2R: `R2R non risponde su http://localhost:7272` | Il server non è su, o è ancora in avvio (migrazioni al primo boot). Avvia `./scripts/r2r_local.sh` in un terminale dedicato e attendi che l'healthcheck sia `healthy` (`docker compose -f docker-compose.r2r.yml ps`) prima del benchmark. |
+| R2R: `port is already allocated` (Docker) | Porta `:7272` o `:5433` già occupata (un run precedente, o un altro servizio). `docker compose -f docker-compose.r2r.yml down` per fermare i container di questo progetto; altrimenti trova cosa occupa la porta (`lsof -i :7272`) e chiudilo. |
+| R2R: `manca VERTEXAI_PROJECT nel .env` (o simili) all'avvio del compose | `docker compose` legge `.env` dalla directory da cui viene lanciato: `scripts/r2r_local.sh` si mette da solo nella root del progetto; se lanci `docker compose` a mano, fallo dalla root (dove sta il `.env`), non da `scripts/`. |
+| R2R: `Unable to submit request because at least one contents field is required` (400 da Vertex) | Bug di R2R: il preset `search_mode="basic"/"advanced"` porta `search_strategy="hyde"`, che con Gemini manda un messaggio senza turno "user" e rompe anche la ricerca. L'adapter non usa mai quei preset (sempre `search_mode="custom"`) — se vedi questo errore, qualcosa sta chiamando l'API con un preset invece che con `search_settings` espliciti. Vedi `docs/r2r.md` bug #3. |
+| R2R: la ricerca col grafo torna vuota, entità con `description_embedding` NULL | `automatic_extraction` non funziona con l'orchestrazione `simple` (deployment light) e l'estrazione manuale da sola non basta: serve anche `POST /graphs/{collection_id}/pull`. L'adapter fa entrambe le chiamate (`_ensure_graph_extracted`); se hai ingestato con una versione più vecchia dell'adapter, il prossimo `ingest()` ripara da solo (richiama `pull`, idempotente). Vedi `docs/r2r.md` bug #2. |
+| R2R: cambio `base_dimension` nel toml e l'ingest fallisce | Come supermemory: la dimensione va fissata **prima** del primo ingest (crea la colonna pgvector). Reset dello store (8c: `down -v`). |
+| R2R: `asyncpg.exceptions.InvalidSchemaNameError: schema "..." does not exist` all'avvio | Bug di R2R: `R2R_PROJECT_NAME` con maiuscole crea uno schema Postgres case-preservato ma un trigger interno lo referenzia senza quote (minuscolizzato) → mismatch. Il compose usa già `olivettiv0` (tutto minuscolo) per aggirarlo — se l'hai cambiato, rimettilo minuscolo e resetta lo store (8c). Vedi `docs/r2r.md`. |
